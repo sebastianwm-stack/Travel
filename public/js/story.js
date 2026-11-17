@@ -24,6 +24,7 @@ function close() {
   el.innerHTML = '';
   document.body.classList.remove('locked');
   state = null;
+  window.dispatchEvent(new Event('rb:sheet-closed'));
 }
 
 function draw() {

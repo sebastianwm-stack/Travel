@@ -16,16 +16,20 @@ async function body(request) {
   return request.json().catch(() => ({}));
 }
 
-async function auth(request, env) {
+// Person und Reise mit einer einzigen Abfrage (jede Datenbank-Runde kostet Zeit)
+const TRIP_COLS = ['id', 'name', 'dest', 'theme', 'start', 'end', 'tz', 'home_tz', 'maps_url', 'maps_synced_at', 'briefing_hour', 'last_briefing', 'created_at', 'hotel'];
+const TRIP_JSON = `json_object(${TRIP_COLS.map((c) => `'${c}', t."${c}"`).join(', ')})`;
+async function auth(request, env, ctx) {
   const h = request.headers.get('authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
   if (token.length < 20) return null;
-  const me = await env.DB.prepare('SELECT * FROM members WHERE token_hash = ?').bind(await sha256(token)).first();
-  if (!me) return null;
-  const trip = await env.DB.prepare('SELECT * FROM trips WHERE id = ?').bind(me.trip_id).first();
-  if (!trip) return null;
+  const row = await env.DB.prepare(`SELECT m.*, ${TRIP_JSON} AS trip_json FROM members m JOIN trips t ON t.id = m.trip_id WHERE m.token_hash = ?`).bind(await sha256(token)).first();
+  if (!row) return null;
+  const { trip_json, ...me } = row;
+  const trip = JSON.parse(trip_json);
   if (!me.last_seen || Date.now() - me.last_seen > 5 * 60e3) {
-    await env.DB.prepare('UPDATE members SET last_seen = ? WHERE id = ?').bind(Date.now(), me.id).run();
+    const upd = env.DB.prepare('UPDATE members SET last_seen = ? WHERE id = ?').bind(Date.now(), me.id).run();
+    if (ctx?.waitUntil) ctx.waitUntil(upd); else await upd;
   }
   return { me, trip };
 }
@@ -33,8 +37,9 @@ async function auth(request, env) {
 const publicMember = (m) => ({ id: m.id, name: m.name, color: m.color, role: m.role, claimed: !!m.claimed, lastSeen: m.last_seen });
 
 async function loadState(env, trip) {
-  const q = (sql) => env.DB.prepare(sql).bind(trip.id).all().then((r) => r.results);
-  const [members, places, hearts, comments, items, files] = await Promise.all([
+  // alles in einer Datenbank-Runde
+  const q = (sql) => env.DB.prepare(sql).bind(trip.id);
+  const res = await env.DB.batch([
     q('SELECT * FROM members WHERE trip_id = ? ORDER BY created_at'),
     q('SELECT * FROM places WHERE trip_id = ? AND deleted = 0'),
     q('SELECT h.* FROM hearts h JOIN places p ON p.id = h.place_id WHERE p.trip_id = ?'),
@@ -42,6 +47,7 @@ async function loadState(env, trip) {
     q('SELECT * FROM items WHERE trip_id = ? ORDER BY ord'),
     q('SELECT * FROM files WHERE trip_id = ?'),
   ]);
+  const [members, places, hearts, comments, items, files] = res.map((r) => r.results || []);
   return { members, places, hearts, comments, items, files };
 }
 
@@ -132,7 +138,7 @@ export function parsePlaceUrl(url) {
 
 // ---------- Router ----------
 
-export async function handleApi(request, env, url) {
+export async function handleApi(request, env, url, ctx) {
   let m0;
   const path = url.pathname.replace(/^\/api/, '');
   const method = request.method;
@@ -199,9 +205,9 @@ export async function handleApi(request, env, url) {
     return json({ ok: true, places: parsed.places.length, trips: out });
   }
 
-  const ctx = await auth(request, env);
-  if (!ctx) return fail(401, 'Dieser Link ist nicht mehr gültig.');
-  const { me, trip } = ctx;
+  const session = await auth(request, env, ctx);
+  if (!session) return fail(401, 'Dieser Link ist nicht mehr gültig.');
+  const { me, trip } = session;
   const isAdmin = me.role === 'admin';
   const now = Date.now();
   let m;
@@ -308,12 +314,12 @@ export async function handleApi(request, env, url) {
   }
 
   if ((m = path.match(/^\/places\/([a-z0-9]+)\/heart$/)) && method === 'POST') {
-    const p = await env.DB.prepare('SELECT id FROM places WHERE id = ? AND trip_id = ?').bind(m[1], trip.id).first();
-    if (!p) return fail(404, 'Ort nicht gefunden.');
-    const has = await env.DB.prepare('SELECT 1 FROM hearts WHERE place_id = ? AND member_id = ?').bind(p.id, me.id).first();
-    if (has) await env.DB.prepare('DELETE FROM hearts WHERE place_id = ? AND member_id = ?').bind(p.id, me.id).run();
-    else await env.DB.prepare('INSERT INTO hearts (place_id, member_id) VALUES (?, ?)').bind(p.id, me.id).run();
-    return json({ hearted: !has });
+    // umschalten mit höchstens zwei Abfragen
+    const removed = await env.DB.prepare('DELETE FROM hearts WHERE place_id = ? AND member_id = ? AND place_id IN (SELECT id FROM places WHERE trip_id = ?) RETURNING place_id').bind(m[1], me.id, trip.id).first();
+    if (removed) return json({ hearted: false });
+    const added = await env.DB.prepare('INSERT OR IGNORE INTO hearts (place_id, member_id) SELECT id, ? FROM places WHERE id = ? AND trip_id = ? RETURNING place_id').bind(me.id, m[1], trip.id).first();
+    if (!added) return fail(404, 'Ort nicht gefunden.');
+    return json({ hearted: true });
   }
 
   // --- Tagesgerüst und Vorschläge ---

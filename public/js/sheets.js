@@ -1,7 +1,7 @@
 // Bottom-Sheets: Ort im Detail, neue Idee, Reisebegleiter, Tagesvorschlag, Einladungslink.
 import { esc, linkify, ICON, avatar, openSheet, closeSheet, toast, fmtChip, fmtShort, ago } from './ui.js';
 import { api, fileUrl } from './api.js';
-import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf } from './state.js';
+import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf, localPlace, localHeart } from './state.js';
 import { sticker, avatars, routeUrl, register, photo, resolveImages, mapsUrl } from './components.js';
 import { findImage } from './images.js';
 import { CAT_NAMES } from './themes.js';
@@ -132,20 +132,25 @@ export function openPlace(id) {
       </details>`, { tall: true, onClose: () => { current = null; } });
 
     sheet.querySelector('[data-h]').addEventListener('click', async () => {
-      try { await mutate(`/places/${p.id}/heart`, { method: 'POST' }); draw(); } catch (e) { toast(e.message); }
+      mutate(`/places/${p.id}/heart`, { method: 'POST' }, localHeart(p.id)).catch((e) => toast(e.message));
+      draw();
     });
     sheet.querySelectorAll('[data-day]').forEach((b) => b.addEventListener('click', async () => {
       const day = b.dataset.day || null;
-      try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { day, ...(day ? {} : { time: '' }) } }); draw(); toast(day ? `Auf ${fmtShort(day)} gelegt` : 'Zurück in die Ideen'); } catch (e) { toast(e.message); }
+      const fields = { day, ...(day ? {} : { time: '', slot: null }) };
+      mutate(`/places/${p.id}`, { method: 'PATCH', body: fields }, localPlace(p.id, fields)).catch((e) => toast(e.message));
+      draw(); toast(day ? `Auf ${fmtShort(day)} gelegt` : 'Zurück in die Ideen');
     }));
     sheet.querySelectorAll('[data-slot]').forEach((b) => b.addEventListener('click', async () => {
-      try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { slot: b.dataset.slot, time: '' } }); draw(); } catch (e) { toast(e.message); }
+      const fields = { slot: b.dataset.slot, time: '' };
+      mutate(`/places/${p.id}`, { method: 'PATCH', body: fields }, localPlace(p.id, fields)).catch((e) => toast(e.message));
+      draw();
     }));
     sheet.querySelector('[data-time]').addEventListener('change', async (e) => {
-      try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { time: e.target.value } }); } catch (err) { toast(err.message); }
+      mutate(`/places/${p.id}`, { method: 'PATCH', body: { time: e.target.value } }, localPlace(p.id, { time: e.target.value })).catch((err) => toast(err.message));
     });
     sheet.querySelector('[data-booked]').addEventListener('change', async (e) => {
-      try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { booked: e.target.checked } }); } catch (err) { toast(err.message); }
+      mutate(`/places/${p.id}`, { method: 'PATCH', body: { booked: e.target.checked } }, localPlace(p.id, { booked: e.target.checked })).catch((err) => toast(err.message));
     });
     sheet.querySelector('[data-edit]').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -362,7 +367,7 @@ register({
   openPlace: (el) => openPlace(el.dataset.id),
   toggleHeart: async (el, e) => {
     e.stopPropagation();
-    try { await mutate(`/places/${el.dataset.id}/heart`, { method: 'POST' }); } catch (err) { toast(err.message); }
+    mutate(`/places/${el.dataset.id}/heart`, { method: 'POST' }, localHeart(el.dataset.id)).catch((err) => toast(err.message));
   },
   addIdea: (el) => openAddIdea({ day: el.dataset.day || null, slot: el.dataset.slot || null }),
   ask: (el) => openAsk(el.dataset.q || ''),

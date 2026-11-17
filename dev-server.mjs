@@ -25,6 +25,7 @@ function statement(sql, params = []) {
   const s = () => sqlite.prepare(sql);
   const plain = (r) => (r ? { ...r } : null);
   return {
+    sql,
     bind: (...p) => statement(sql, p),
     first: async () => plain(s().get(...params)),
     all: async () => ({ results: s().all(...params).map(plain) }),
@@ -35,7 +36,7 @@ export const DB = {
   prepare: (sql) => statement(sql),
   batch: async (stmts) => {
     sqlite.exec('BEGIN');
-    try { const out = []; for (const st of stmts) out.push(await st.run()); sqlite.exec('COMMIT'); return out; }
+    try { const out = []; for (const st of stmts) out.push(/^\s*select/i.test(st.sql) ? await st.all() : await st.run()); sqlite.exec('COMMIT'); return out; }
     catch (e) { sqlite.exec('ROLLBACK'); throw e; }
   },
 };

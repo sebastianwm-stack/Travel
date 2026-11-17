@@ -2,7 +2,7 @@
 //  Ablauf: fünf lockere Abschnitte (Frühstück bis Abend); freie Abschnitte zeigen einen Vorschlag aus den Ideen.
 //  Karte: der Tag als Route, darunter die Stopps als wischbare Karten.
 import { esc, ICON, fmtLong, toast, openSheet, weekday, dayNum, monthName } from './ui.js';
-import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf, place, mutate, SLOTS, SLOT_LABEL, slotOf, whenLabel } from './state.js';
+import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf, place, mutate, SLOTS, SLOT_LABEL, slotOf, whenLabel, localPlace } from './state.js';
 import { api } from './api.js';
 import { dayChips, stopCard, sticker, avatars, empty, register, routeUrl, areaOf, photo } from './components.js';
 import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
@@ -219,7 +219,8 @@ window.addEventListener('rb:goto-day', (e) => { planUi.day = e.detail; window.di
 
 register({
   sugTake: async (el) => {
-    try { await mutate('/plan/apply', { method: 'POST', body: { moves: [{ id: el.dataset.id, day: el.dataset.day, slot: el.dataset.slot }] } }); toast(`${place(el.dataset.id)?.title || 'Ort'} ist eingeplant`); } catch (e) { toast(e.message); }
+    const mv = { id: el.dataset.id, day: el.dataset.day, slot: el.dataset.slot };
+    mutate('/plan/apply', { method: 'POST', body: { moves: [mv] } }, localPlace(mv.id, { day: mv.day, slot: mv.slot, time: '' })).catch((e) => toast(e.message));
   },
   sugNext: (el) => { const k = `${el.dataset.day}:${el.dataset.slot}`; planUi.alt[k] = (planUi.alt[k] || 0) + 1; window.dispatchEvent(new Event('rb:render')); },
   sugSkip: (el) => { planUi.skip.add(`${el.dataset.day}:${el.dataset.slot}`); window.dispatchEvent(new Event('rb:render')); },
@@ -228,7 +229,8 @@ register({
     const moves = daySlotsOf(d).map((slot) => ({ slot, sg: suggestionFor(d, slot) })).filter((x) => x.sg && !stopsOf(d).some((p) => slotOf(p) === x.slot))
       .map((x) => ({ id: x.sg.p.id, day: d, slot: x.slot }));
     if (!moves.length) return;
-    try { await mutate('/plan/apply', { method: 'POST', body: { moves } }); toast(`${moves.length} Orte für ${weekday(d)} eingeplant`); } catch (e) { toast(e.message); }
+    mutate('/plan/apply', { method: 'POST', body: { moves } }, (data) => moves.forEach((m) => localPlace(m.id, { day: m.day, slot: m.slot, time: '' })(data))).catch((e) => toast(e.message));
+    toast(`${moves.length} Orte für ${weekday(d)} eingeplant`);
   },
   planMode: (el) => { planUi.mode = el.dataset.m; window.dispatchEvent(new Event('rb:render')); },
   pickDay: (el) => { planUi.day = el.dataset.day; if (location.hash !== '#/plan') location.hash = '#/plan'; else window.dispatchEvent(new Event('rb:render')); },

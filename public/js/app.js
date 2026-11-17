@@ -55,7 +55,19 @@ function installHint(r) {
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); });
 window.addEventListener('rb:render', () => render({ soft: true }));
-onChange(() => render({ soft: true }));
+// Neuzeichnen bündeln; solange ein Fenster offen ist, erst beim Schließen (spart z. B. den Neuaufbau der Karte)
+let pending = false, frame = 0;
+const overlayOpen = () => sheetOpen() || !document.getElementById('story').hidden || !document.getElementById('tour').hidden;
+function scheduleRender() {
+  if (overlayOpen()) { pending = true; return; }
+  cancelAnimationFrame(frame);
+  frame = requestAnimationFrame(() => {
+    if (overlayOpen()) { pending = true; return; }
+    pending = false; render({ soft: true });
+  });
+}
+onChange(scheduleRender);
+window.addEventListener('rb:sheet-closed', () => { if (pending) scheduleRender(); });
 
 // Klicks zentral verteilen
 document.addEventListener('click', (e) => {

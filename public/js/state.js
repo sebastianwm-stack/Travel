@@ -15,19 +15,43 @@ export function setData(d, { cache = true } = {}) {
 }
 export const onChange = (fn) => S.listeners.add(fn);
 
+let lastJSON = '';
 export async function refresh() {
   const d = await api('/trip');
   S.offlineSince = null;
-  setData(d);
+  // nur neu zeichnen, wenn sich wirklich etwas geändert hat
+  const j = JSON.stringify(d);
+  if (j !== lastJSON || !S.data) { lastJSON = j; setData(d); }
   return d;
+}
+let refreshTimer;
+export function refreshSoon(ms = 400) {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => refresh().catch(() => {}), ms);
 }
 
 // Nach einer Änderung neu laden, Fehler zeigt der Aufrufer
-export async function mutate(path, opts) {
+// Änderung an den Server schicken. Mit `local` wird sie sofort angezeigt (optimistisch) und im
+// Hintergrund gespeichert; ohne `local` wartet der Aufruf, bis der neue Stand geladen ist.
+export async function mutate(path, opts, local) {
+  if (local && S.data) {
+    local(S.data);
+    S.listeners.forEach((fn) => fn());
+    try { const r = await api(path, opts); refreshSoon(); return r; }
+    catch (e) { refreshSoon(0); throw e; }
+  }
   const r = await api(path, opts);
   await refresh().catch(() => {});
   return r;
 }
+
+// Bausteine für sofortige Änderungen
+export const localPlace = (id, fields) => (d) => { const p = d.places.find((x) => x.id === id); if (p) Object.assign(p, fields); };
+export const localHeart = (id) => (d) => {
+  const me = d.me.id;
+  const i = d.hearts.findIndex(([p, m]) => p === id && m === me);
+  if (i >= 0) d.hearts.splice(i, 1); else d.hearts.push([id, me]);
+};
 
 // ---------- Ableitungen ----------
 export const me = () => S.data.me;

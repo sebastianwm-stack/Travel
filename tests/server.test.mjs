@@ -15,12 +15,13 @@ import { b64uEncode } from '../server/util.js';
 function memoryD1() {
   const db = new DatabaseSync(':memory:');
   const st = (sql, params = []) => ({
+    sql,
     bind: (...p) => st(sql, p),
     first: async () => { const r = db.prepare(sql).get(...params); return r ? { ...r } : null; },
     all: async () => ({ results: db.prepare(sql).all(...params).map((r) => ({ ...r })) }),
     run: async () => db.prepare(sql).run(...params),
   });
-  return { prepare: (sql) => st(sql), batch: async (list) => { for (const s of list) await s.run(); } };
+  return { prepare: (sql) => st(sql), batch: async (list) => { const out = []; for (const s of list) out.push(/^\s*select/i.test(s.sql || '') ? await s.all() : await s.run()); return out; } };
 }
 
 test('Web Push: Nachricht lässt sich mit dem Empfängerschlüssel wieder entschlüsseln (RFC 8291)', async () => {

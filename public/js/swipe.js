@@ -1,6 +1,6 @@
 // Ideen swipen: rechts = will ich (Herz), links = eher nicht. Wenn alle ein Herz vergeben haben: Match.
 import { esc, ICON, avatar, toast } from './ui.js';
-import { S, me, member, pool, heartsOf, iHeart, mutate } from './state.js';
+import { S, me, member, pool, heartsOf, iHeart, mutate, localHeart } from './state.js';
 import { CATS } from './themes.js';
 import { register, areaOf, photo, mapsUrl } from './components.js';
 import { openPlace } from './sheets.js';
@@ -60,10 +60,11 @@ export function swipeHTML() {
 async function decide(id, yes) {
   if (yes) {
     try {
-      await mutate(`/places/${id}/heart`, { method: 'POST' });
+      const p = mutate(`/places/${id}/heart`, { method: 'POST' }, localHeart(id));
       history.push({ id, yes });
       const n = heartsOf(id).length;
       if (n === S.data.members.length && n > 1) match(id);
+      await p;
     } catch (e) { toast(e.message); }
   } else {
     const no = nopes(); no.add(id); saveNopes(no);
@@ -87,7 +88,7 @@ function fly(card, yes) {
   card.style.transform = `translate(${yes ? 520 : -520}px, -40px) rotate(${yes ? 24 : -24}deg)`;
   card.style.opacity = '0';
   card.classList.add(yes ? 'show-yes' : 'show-no');
-  setTimeout(() => decide(card.dataset.id, yes), 220);
+  setTimeout(() => decide(card.dataset.id, yes), 160);
 }
 
 export function mountSwipe(root) {
@@ -127,7 +128,7 @@ register({
   swipeUndo: async () => {
     const last = history.pop();
     if (!last) return;
-    if (last.yes) { try { await mutate(`/places/${last.id}/heart`, { method: 'POST' }); } catch (e) { toast(e.message); } }
+    if (last.yes) mutate(`/places/${last.id}/heart`, { method: 'POST' }, localHeart(last.id)).catch((e) => toast(e.message));
     else { const no = nopes(); no.delete(last.id); saveNopes(no); window.dispatchEvent(new Event('rb:render')); }
   },
   resetNopes: () => { saveNopes(new Set()); window.dispatchEvent(new Event('rb:render')); },

@@ -12,7 +12,9 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
+button, a, [data-act] { -webkit-tap-highlight-color: transparent; }
+.btn:active, .chip:active, .icon:active, .res:active, .idea:active, .row-card:active, .fav:active { transform: scale(0.97); }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: Brico, system-ui, -apple-system, sans-serif; font-size: 16px; line-height: 1.4; -webkit-font-smoothing: antialiased; padding-bottom: calc(var(--nav-h) + 76px); }
 body.locked { overflow: hidden; }
 body[data-route="karte"] { padding-bottom: 0; }

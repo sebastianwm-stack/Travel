@@ -10,7 +10,7 @@ import { api } from './api.js';
 import { searchPlaces } from './search.js';
 import { pushState, enablePush, disablePush, testPush } from './push.js';
 
-export const ui = { cat: 'Alle', onlyOpen: true, q: '', ideasMode: null };
+export const ui = { cat: 'Alle', onlyOpen: true, q: '', ideasMode: null, limit: 40 };
 
 const askBar = () => `<button class="askbar" data-act="ask">${ICON.spark}<span>Frag den Reiseberater …</span><b>Fragen</b></button>`;
 const shortTitle = (s) => s.replace(/\s*\(.*\)/, '');
@@ -139,7 +139,7 @@ export function viewIdeas() {
         ${CAT_NAMES.filter((c) => counts[c]).map((c) => `<button class="chip cat ${ui.cat === c ? 'on' : ''}" style="--c:${CATS[c].bg}" data-act="pickCat" data-cat="${c}">${c}<small>${counts[c]}</small></button>`).join('')}
       </div>
       <label class="switch small"><input type="checkbox" data-act="toggleOpen" ${ui.onlyOpen ? 'checked' : ''}> Nur Ideen ohne Tag</label>
-      ${list.length ? `<div class="ideas">${list.map(ideaCard).join('')}</div>` : empty('Nichts gefunden', q ? 'Versuch einen anderen Suchbegriff.' : 'Hier landen alle Orte, die noch keinen Tag haben.')}
+      ${list.length ? `<div class="ideas">${list.slice(0, ui.limit).map(ideaCard).join('')}</div>${list.length > ui.limit ? `<button class="btn wide" data-act="moreIdeas">${list.length - ui.limit} weitere zeigen</button>` : ''}` : empty('Nichts gefunden', q ? 'Versuch einen anderen Suchbegriff.' : 'Hier landen alle Orte, die noch keinen Tag haben.')}
       ${t.mapsSyncedAt ? `<p class="foot">Neue Orte aus eurer Google-Maps-Liste kommen automatisch dazu. Zuletzt ${ago(t.mapsSyncedAt)}.</p>` : ''}
     </div>${askBar()}`;
 }
@@ -233,7 +233,8 @@ register({
   story: (el) => openStory(el.dataset.day),
   goSwipe: () => { ui.ideasMode = 'swipen'; location.hash = '#/ideen'; },
   ideasMode: (el) => { ui.ideasMode = el.dataset.m; window.dispatchEvent(new Event('rb:render')); },
-  pickCat: (el) => { ui.cat = el.dataset.cat; window.dispatchEvent(new Event('rb:render')); },
+  pickCat: (el) => { ui.cat = el.dataset.cat; ui.limit = 40; window.dispatchEvent(new Event('rb:render')); },
+  moreIdeas: () => { ui.limit += 60; window.dispatchEvent(new Event('rb:render')); },
   toggleOpen: (el) => { ui.onlyOpen = el.checked; window.dispatchEvent(new Event('rb:render')); },
   relink: async (el) => {
     if (!confirm(`Neuen persönlichen Link für ${el.dataset.name} erzeugen? Der alte gilt dann nicht mehr. Das braucht man nur, wenn das Handy weg ist.`)) return;

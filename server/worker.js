@@ -26,13 +26,13 @@ async function serveStatic(request, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) return serveStatic(request, url);
     if (!env.DB) return fail(503, 'Die Datenbank ist nicht angebunden (D1-Bindung "DB" fehlt).');
     try {
       await ensureSchema(env.DB);
-      return await handleApi(request, env, url);
+      return await handleApi(request, env, url, ctx);
     } catch (e) {
       console.error(e);
       return fail(500, 'Da ist auf dem Server etwas schiefgelaufen.');

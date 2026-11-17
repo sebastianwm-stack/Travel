@@ -64,6 +64,11 @@ const schemaReady = new WeakMap();
 export function ensureSchema(db) {
   if (!schemaReady.has(db)) {
     schemaReady.set(db, (async () => {
+      // Schnellweg: Schema schon auf dem neuesten Stand
+      try {
+        const row = await db.prepare("SELECT v FROM meta WHERE k = 'version'").first();
+        if (row && Number(row.v) === MIGRATIONS.length) return;
+      } catch { /* meta fehlt noch: voller Weg */ }
       const stmts = SCHEMA.split(';')
         .map((s) => s.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').trim())
         .filter(Boolean);

@@ -27,6 +27,7 @@ function finish(goSwipe) {
   el.hidden = true;
   el.innerHTML = '';
   document.body.classList.remove('locked');
+  window.dispatchEvent(new Event('rb:sheet-closed'));
   if (goSwipe) actions.goSwipe?.();
 }
 const next = () => { step++; draw(); };

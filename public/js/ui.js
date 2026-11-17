@@ -109,5 +109,6 @@ export function closeSheet() {
   root.innerHTML = '';
   document.body.classList.remove('locked');
   const f = sheetClose; sheetClose = null; f?.();
+  window.dispatchEvent(new Event('rb:sheet-closed'));
 }
 export const sheetOpen = () => !document.getElementById('sheet').hidden;
