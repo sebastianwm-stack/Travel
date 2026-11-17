@@ -16,6 +16,7 @@ Gestaltung: "Sticker-Board". Warmes Papier, eine kräftige Kopfzeile mit Skyline
 - **Reiseberater:** über Cloudflare Workers AI (Llama 3.3 70B, kostenloses Tageskontingent, kein API-Schlüssel). Er kennt den Plan, die Ideen, die Notizen und weiß, wer wo hinwill.
 - **Abendbriefing:** Um 20 Uhr Ortszeit kommt eine Benachrichtigung mit dem Plan für morgen, am Abend vor dem Abflug nach Heimatzeit. Jede Person schaltet sie unter Infos ein, auf dem iPhone nur in der App vom Home-Bildschirm.
 - **Infos:** Flüge und Hotel, die Mitreisenden, Einladen und die Einstellungen. Bewusst ohne Aufgaben- und Packlisten.
+- **Wege:** Im Ablauf steht zwischen den Stopps, wie lange es dauert und mit welcher Linie (oder zu Fuß), Antippen öffnet die Verbindung in Google Maps. Die Tagesvorschläge rechnen mit denselben Zeiten. Für New York kommt das Streckennetz aus dem offiziellen MTA-Fahrplan (GTFS): Fahrzeiten tagsüber, halbe Taktzeit als Wartezeit, getrennt nach werktags, samstags und sonntags, dazu Umstiege und Fußwege zur Station. Neu bauen: GTFS von https://rrgtfsfeeds.s3.amazonaws.com/gtfs_subway.zip entpacken, dann `node scripts/build-transit.mjs <ordner>` (schreibt `public/js/transit/nyc.js`). Andere Städte: Netz bauen und in `public/js/transit/index.js` eintragen, sonst schätzt die App nach Entfernung.
 - **Offline:** Die App zeigt den letzten Stand, wenn kein Netz da ist. Schon angesehene Kartenkacheln bleiben im Speicher.
 
 ## Reisen und Einladungen

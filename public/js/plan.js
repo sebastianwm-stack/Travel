@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { dayChips, stopCard, sticker, avatars, empty, register, routeUrl, areaOf, photo } from './components.js';
 import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
 import { loadMapLib, baseMap, addPin, addRoute, addHome, hasCoords } from './map.js';
+import { routerFor } from './transit/index.js';
 
 export const planUi = { day: null, mode: 'ablauf', draft: null, stamp: '', loading: false, alt: {}, skip: new Set() };
 let map = null;
@@ -97,6 +98,28 @@ function suggestionFor(d, slot) {
   return { p: list[(planUi.alt[key] || 0) % list.length], n: list.length };
 }
 
+// ---------- Wege zwischen den Stopps (U-Bahn-Fahrplan, sonst nichts) ----------
+let router = { trip: null, r: null, loading: false };
+function ensureRouter() {
+  const t = trip();
+  if (router.trip === t.id || router.loading) return;
+  router.loading = true;
+  routerFor([t.hotel, ...S.data.places]).then((r) => { router = { trip: t.id, r, loading: false }; if (r) window.dispatchEvent(new Event('rb:render')); })
+    .catch(() => { router = { trip: t.id, r: null, loading: false }; });
+}
+const WALK_IC = I('<circle cx="13" cy="4" r="2"/><path d="m9 21 2-6 3 3v3M10 12l1-4 3 2 3 1M11 8l-3 2-1 4"/>');
+const TRAIN_IC = I('<rect x="5" y="3" width="14" height="14" rx="4"/><path d="M5 11h14M8 21l2-4M16 21l-2-4"/><circle cx="9" cy="14" r=".6"/><circle cx="15" cy="14" r=".6"/>');
+function leg(a, b, d, sug = false) {
+  if (!router.r || !a || !b || !hasCoords(a) || !hasCoords(b)) return '';
+  const r = router.r.trip(a, b, { date: d });
+  if (!r) return '';
+  const walk = r.mode === 'walk';
+  const url = `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${walk ? 'walking' : 'transit'}`;
+  const what = walk ? `${r.min} Min. zu Fuß`
+    : `${r.min} Min. ${r.lines.map((l) => `<i class="ln" style="background:${l.color};color:${l.text}">${esc(l.name)}</i>`).join('')}<small>ab ${esc(r.from)}</small>`;
+  return `<a class="leg ${sug ? 'sug' : ''} ${r.min >= 45 ? 'long' : ''}" href="${url}" target="_blank" rel="noopener" data-stop aria-label="Weg: ${walk ? `${r.min} Minuten zu Fuß` : `${r.min} Minuten mit Linie ${r.lines.map((l) => l.name).join(', ')}`}">${walk ? WALK_IC : TRAIN_IC}<span>${what}</span></a>`;
+}
+
 function rowCard(p) {
   const hs = heartsOf(p.id);
   return `<article class="row-card ${p.booked ? 'booked' : ''}" data-act="openPlace" data-id="${p.id}" tabindex="0">
@@ -108,18 +131,23 @@ function rowCard(p) {
 
 function ablauf(d) {
   ensureDraft();
+  ensureRouter();
+  const t = trip();
   const stops = stopsOf(d);
+  // Route des Tages: Unterkunft → Stopps und Vorschläge → Unterkunft
+  let last = t.hotel && d !== t.start ? t.hotel : null;
+  const step = (p, sug) => { const h = leg(last, p, d, sug); if (hasCoords(p)) last = p; return h; };
   const loose = stops.filter((p) => !slotOf(p));
   let anySug = false;
   const sections = daySlotsOf(d).map((slot) => {
     const here = stops.filter((p) => slotOf(p) === slot);
-    let body = here.map(rowCard).join('');
+    let body = here.map((p) => step(p) + rowCard(p)).join('');
     if (!here.length) {
       const sg = suggestionFor(d, slot);
       if (sg) {
         anySug = true;
         const hs = heartsOf(sg.p.id);
-        body = `<div class="sugcard">
+        body = step(sg.p, true) + `<div class="sugcard">
           <div class="sc-ph" data-act="openPlace" data-id="${sg.p.id}">${photo(sg.p)}</div>
           <div class="sc-main"><small>Vorschlag</small><b data-act="openPlace" data-id="${sg.p.id}">${esc(sg.p.title)}</b>
             <span class="ar">${esc([areaOf(sg.p), hs.length ? `${hs.map((m) => m.name).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin` : ''].filter(Boolean).join(' · '))}</span>
@@ -134,13 +162,13 @@ function ablauf(d) {
     return `<section class="slot ${here.length ? 'filled' : ''}"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${SLOT_IC[slot]}</span><h3>${SLOT_LABEL[slot]}</h3>
       <button class="slot-add" data-act="addIdea" data-day="${d}" data-slot="${slot}" aria-label="Ort für ${SLOT_LABEL[slot]} hinzufügen">${ICON.plus}</button></div>${body}</section>`;
   }).join('');
-  const t = trip();
+  const back = t.hotel ? leg(last, t.hotel, d) : '';
   const hint = d === t.start ? '<p class="hint">Anreisetag: Ankunft am späten Nachmittag, nach der Einreise bleibt der Abend.</p>'
     : d === t.end ? '<p class="hint">Abreisetag: Der Vormittag ist noch frei, abends geht der Flug.</p>' : '';
   const home = t.hotel ? `<div class="home-row">${HOME_IC}<span>${esc(t.hotel.name)}</span></div>` : '';
   return `${hint}
     ${anySug ? `<button class="btn primary wide" data-act="sugTakeAll" data-day="${d}">${ICON.check}Alle Vorschläge für ${weekday(d)} übernehmen</button>` : ''}
-    <div class="slots">${home && d !== t.start ? home.replace('home-row', 'home-row start') : ''}${sections}${home ? home.replace('home-row', 'home-row end') : ''}</div>
+    <div class="slots">${home && d !== t.start ? home.replace('home-row', 'home-row start') : ''}${sections}${home ? back + home.replace('home-row', 'home-row end') : ''}</div>
     ${loose.length ? `<section class="slot"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${I('<circle cx="12" cy="12" r="3"/>')}</span><h3>Irgendwann</h3></div>${loose.map(rowCard).join('')}</section>` : ''}`;
 }
 

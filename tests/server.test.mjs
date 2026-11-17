@@ -258,3 +258,24 @@ test('Tagesgerüst: Abreisetag bleibt nah an der Unterkunft, Abschnitte folgen d
     assert.ok(km(home, p) < 2.5, `${p.id} zu weit weg für den Abreisetag`);
   }
 });
+
+test('U-Bahn-Router: plausible Fahrzeiten aus dem MTA-Fahrplan', async () => {
+  const { routerFor, ttOf } = await import('../public/js/transit/index.js');
+  const hotel = { lat: 40.7114, lng: -74.0102 }; // Lower Manhattan
+  const r = await routerFor([hotel]);
+  assert.ok(r, 'New York hat ein Netz');
+  const ts = r.trip(hotel, { lat: 40.758, lng: -73.9855 }, { date: '2026-12-18' }); // Times Square
+  assert.equal(ts.mode, 'transit');
+  assert.ok(ts.min >= 15 && ts.min <= 35, `Times Square ${ts.min} Min.`);
+  assert.ok(ts.lines.length >= 1 && ts.lines[0].color.startsWith('#'));
+  const near = r.trip(hotel, { lat: 40.7128, lng: -74.0060 }, { date: '2026-12-18' }); // ein paar Blocks
+  assert.equal(near.mode, 'walk');
+  const dyker = r.trip(hotel, { lat: 40.6168, lng: -74.0183 }, { date: '2026-12-20' });
+  assert.ok(dyker.min >= 40 && dyker.min <= 75, `Dyker Heights ${dyker.min} Min.`);
+  // Wochenende: B und W fahren nicht
+  const sun = r.trip(hotel, { lat: 40.758, lng: -73.9855 }, { date: '2026-12-20' });
+  assert.ok(!sun.lines.some((l) => l.name === 'B' || l.name === 'W'));
+  // außerhalb des Netzes kein Router
+  assert.equal(await routerFor([{ lat: 52.52, lng: 13.40 }]), null);
+  assert.equal(ttOf(null), null);
+});

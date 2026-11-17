@@ -1,7 +1,7 @@
 // Offline-Unterstützung: erst frisch aus dem Netz, im Funkloch aus dem Cache.
 // /api/ wird nie zwischengespeichert (den letzten Reisestand hält die App selbst im localStorage).
-const CACHE = 'reisebande-v6';
-const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/js/illus.js', '/js/search.js', '/js/tour.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
+const CACHE = 'reisebande-v7';
+const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/js/illus.js', '/js/search.js', '/js/tour.js', '/js/transit/index.js', '/js/transit/router.js', '/js/transit/nyc.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

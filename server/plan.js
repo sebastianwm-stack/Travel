@@ -21,8 +21,17 @@ const LUNCH = 11.5;
 
 const hasPos = (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng);
 const dur = (p) => p.hours || DURATION[p.cat] || 1.25;
-// Wegezeit in Stunden: kurze Wege zu Fuß, längere mit der Bahn
-const travel = (a, b) => (a && b && hasPos(a) && hasPos(b) ? 0.2 + Math.min(1.25, km(a, b) * 0.08) : 0.25);
+// Wegezeit in Minuten. Mit Fahrplan-Router (tt) echte U-Bahn- bzw. Fußwege, sonst eine Schätzung aus der Entfernung.
+// tt(a, b, date) → Minuten oder null (Ort außerhalb des Netzes)
+export function minutes(a, b, tt, date) {
+  if (!a || !b || !hasPos(a) || !hasPos(b)) return 15;
+  const m = tt ? tt(a, b, date) : null;
+  if (m != null) return m;
+  const k = km(a, b);
+  return k < 1 ? k * 12.5 : 12 + Math.min(75, k * 4.8);
+}
+// Wegezeit in Stunden mit etwas Puffer
+const travelOf = (tt, date) => (a, b) => (a && b && hasPos(a) && hasPos(b) ? minutes(a, b, tt, date) / 60 + 0.1 : 0.25);
 const toH = (t) => { const [h, m] = String(t).split(':').map(Number); return h + m / 60; };
 
 export function findOutliers(candidates, others = []) {
@@ -34,7 +43,7 @@ export function findOutliers(candidates, others = []) {
 }
 
 // places: [{id, lat, lng, cat, hearts, day, time, hours}], days: ['YYYY-MM-DD', ...]
-export function suggestPlan(places, days, { perDay = 6, lightDays = [], dayStart = {}, home = null } = {}) {
+export function suggestPlan(places, days, { perDay = 6, lightDays = [], dayStart = {}, home = null, tt = null } = {}) {
   const planned = new Map(days.map((d) => [d, places.filter((p) => p.day === d)]));
   const cap = new Map(days.map((d) => [d, Math.max(0, (lightDays.includes(d) ? 2 : perDay) - planned.get(d).length)]));
   const open = days.filter((d) => cap.get(d) > 0);
@@ -84,13 +93,14 @@ export function suggestPlan(places, days, { perDay = 6, lightDays = [], dayStart
     }
 
     open.forEach((d, i) => {
+      const travel = travelOf(tt, d);
       dayCenter.set(d, centers[i]);
       const blocked = fixedBlocks(planned.get(d));
       let t = dayStart[d] ?? 9.5;
       let prev = home && hasPos(home) ? home : null; // jeder Tag beginnt an der Unterkunft
       let ord = planned.get(d).length;
       // Cafés morgens zuerst, Restaurants frühestens mittags (sonst der nächste andere Ort vorgezogen)
-      const queue = route(assign.get(d), planned.get(d), home).sort((a, b) => (b.cat === 'Café') - (a.cat === 'Café'));
+      const queue = route(assign.get(d), planned.get(d), home, (a, b) => minutes(a, b, tt, d)).sort((a, b) => (b.cat === 'Café') - (a.cat === 'Café'));
       while (queue.length) {
         let k = 0;
         if (queue[0].cat === 'Essen' && t < LUNCH) { const alt = queue.findIndex((q) => q.cat !== 'Essen'); if (alt > 0) k = alt; }
@@ -113,6 +123,7 @@ export function suggestPlan(places, days, { perDay = 6, lightDays = [], dayStart
       .map((d) => ({ d, c: dayCenter.get(d) || mean(planned.get(d).filter(hasPos)) || p }))
       .sort((a, b) => km(a.c, p) - km(b.c, p));
     for (const { d } of options) {
+      const travel = travelOf(tt, d);
       const end = dayEnd.get(d) || { t: dayStart[d] ?? 9.5, prev: null, ord: planned.get(d).length };
       const start = Math.max(ABSTECHER_FROM, end.t + travel(end.prev, p));
       const slot = fit(start, dur(p), fixedBlocks(planned.get(d)), travel(end.prev, p));
@@ -150,7 +161,7 @@ function fmt(h) {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 // Reihenfolge nach dem jeweils nächsten Ort. Start: ein schon geplanter Ort des Tages, sonst die Unterkunft, sonst der westlichste.
-function route(stops, fixed, home = null) {
+function route(stops, fixed, home = null, cost = km) {
   if (stops.length < 2) return stops;
   const rest = [...stops];
   const startFrom = fixed.find(hasPos) || (home && hasPos(home) ? home : null);
@@ -159,7 +170,7 @@ function route(stops, fixed, home = null) {
   if (!startFrom) { out.push(cur); rest.splice(rest.indexOf(cur), 1); }
   while (rest.length) {
     let bi = 0;
-    rest.forEach((p, i) => { if (km(cur, p) < km(cur, rest[bi])) bi = i; });
+    rest.forEach((p, i) => { if (cost(cur, p) < cost(cur, rest[bi])) bi = i; });
     cur = rest.splice(bi, 1)[0];
     out.push(cur);
   }
@@ -194,10 +205,10 @@ export function daySlots(day, { start, end } = {}) {
   return SLOTS;
 }
 
-export function draftPlan(places, days, { start, end, home = null } = {}) {
+export function draftPlan(places, days, { start, end, home = null, tt = null } = {}) {
   // Gegenden der Tage aus dem Tagesvorschlag (nahe Orte zusammen, Ausreißer als Abstecher)
   const groups = new Map(days.map((d) => [d, new Set()]));
-  for (const m of suggestPlan(places, days, { perDay: 5, lightDays: [start, end].filter(Boolean), dayStart: start ? { [start]: 18 } : {}, home })) {
+  for (const m of suggestPlan(places, days, { perDay: 5, lightDays: [start, end].filter(Boolean), dayStart: start ? { [start]: 18 } : {}, home, tt })) {
     groups.get(m.day)?.add(m.id);
   }
   const byId = new Map(places.map((p) => [p.id, p]));
@@ -229,8 +240,9 @@ export function draftPlan(places, days, { start, end, home = null } = {}) {
         const dist = center && hasPos(p) ? km(center, p) : 3;
         if (!groups.get(d).has(p.id) && dist > 3) return -Infinity; // nur Orte in der Gegend des Tages
         // Frühstück und Abend lieber in der Nähe der Unterkunft
-        const nearHome = home && hasPos(home) && hasPos(p) && (slot === 'frueh' || slot === 'abend') ? km(home, p) * 0.35 : 0;
-        const leg = hasPos(p) ? (prev ? km(prev, p) * 0.45 : 0) + (nextFixed ? km(p, nextFixed) * 0.3 : 0) : 1;
+        const nearHome = home && hasPos(home) && hasPos(p) && (slot === 'frueh' || slot === 'abend') ? minutes(home, p, tt, d) * 0.035 : 0;
+        // Wegezeit vom vorigen Stopp und zum nächsten festen Termin (Minuten)
+        const leg = hasPos(p) ? (prev ? minutes(prev, p, tt, d) * 0.045 : 0) + (nextFixed ? minutes(nextFixed, p, tt, d) * 0.03 : 0) : 1;
         return fit * 2 + (p.hearts || 0) * 1.5 + (groups.get(d).has(p.id) ? 2 : 0) - dist * 0.4 - nearHome - leg;
       };
       const ranked = places.filter((p) => !p.day && !used.has(p.id))

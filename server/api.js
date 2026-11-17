@@ -3,6 +3,7 @@
 import { json, fail, sha256, rid, newToken, str, isDate, isTime, num, daysOf, addDays, localParts } from './util.js';
 import { validCat, guessCat } from './cats.js';
 import { suggestPlan, draftPlan, SLOTS } from './plan.js';
+import { routerFor, ttOf } from '../public/js/transit/index.js';
 import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
@@ -329,7 +330,9 @@ export async function handleApi(request, env, url, ctx) {
     s.hearts.forEach((h) => hc.set(h.place_id, (hc.get(h.place_id) || 0) + 1));
     const days = daysOf(trip);
     const b = await body(request);
-    const draft = draftPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), days, { start: trip.start, end: trip.end, home: safeJSON(trip.hotel || 'null', null) });
+    const home = safeJSON(trip.hotel || 'null', null);
+    const tt = ttOf(await routerFor([home, ...s.places]));
+    const draft = draftPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), days, { start: trip.start, end: trip.end, home, tt });
     if (Array.isArray(b.days)) for (const d of Object.keys(draft)) if (!b.days.includes(d)) delete draft[d];
     return json({ draft });
   }

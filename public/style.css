@@ -525,3 +525,13 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 
 .sw-cmt { font-size: 14px; line-height: 1.35; background: var(--soft); border-radius: 10px; padding: 6px 10px; overflow-wrap: anywhere; }
 .sw-cmt b { font-weight: 750; }
+
+/* Wege zwischen den Stopps im Ablauf */
+.leg { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 14px; padding: 4px 10px 4px 12px; border-left: 2.5px dotted var(--line2); color: var(--mute); font-size: 13px; font-weight: 700; text-decoration: none; min-height: 32px; }
+.leg svg { width: 17px; height: 17px; flex: none; }
+.leg span { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.leg .ln { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 10px; font-style: normal; font-size: 11.5px; font-weight: 800; line-height: 1; }
+.leg small { font-weight: 600; color: var(--mute); margin-left: 2px; }
+.leg.long { color: var(--tomato); border-left-color: var(--tomato); }
+.leg.sug { opacity: .75; }
+.leg:active { opacity: .6; }
