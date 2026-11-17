@@ -2,7 +2,7 @@
 import { esc, ICON, avatar, toast } from './ui.js';
 import { S, me, member, pool, heartsOf, iHeart, mutate } from './state.js';
 import { CATS } from './themes.js';
-import { register, areaOf, photo } from './components.js';
+import { register, areaOf, photo, mapsUrl } from './components.js';
 import { openPlace } from './sheets.js';
 
 const nopeKey = () => `rb.nope.${S.data.me.id}`;
@@ -23,12 +23,12 @@ function cardHTML(p, depth) {
   const hs = heartsOf(p.id);
   const by = member(p.createdBy);
   return `<article class="swcard" data-id="${p.id}" style="--bg:${c.bg};--fg:${c.fg};--d:${depth}" ${depth === 0 ? 'tabindex="0"' : 'aria-hidden="true"'}>
-    <div class="sw-top ${p.image ? 'with-ph' : ''}">
-      ${p.image ? photo(p, 'sw-ph') : ''}
+    <div class="sw-top with-ph">
+      ${photo(p, 'sw-ph')}
       <span class="st big" style="background:var(--fg);color:var(--bg)">${esc(p.cat)}</span>
-      ${p.image ? '' : `<h2>${esc(p.title)}</h2>${areaOf(p) ? `<p>${esc(areaOf(p))}</p>` : ''}`}
     </div>
-    ${p.image ? `<div class="sw-title"><h2>${esc(p.title)}</h2>${areaOf(p) ? `<p>${esc(areaOf(p))}</p>` : ''}</div>` : ''}
+    <div class="sw-title"><h2>${esc(p.title)}</h2>${areaOf(p) ? `<p>${esc(areaOf(p))}</p>` : ''}
+      <a class="gm" href="${mapsUrl(p)}" target="_blank" rel="noopener" data-stop>In Google Maps ansehen →</a></div>
     <div class="sw-body">
       ${p.note ? `<p class="note">${esc(p.note)}</p>` : '<p class="hint">Noch keine Notiz.</p>'}
       ${hs.length ? `<p class="who">${hs.map((m) => avatar(m)).join('')} ${hs.map((m) => esc(m.name)).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin</p>`
@@ -96,7 +96,7 @@ export function mountSwipe(root) {
   const card = stack.lastElementChild; // oberste Karte
   if (!card) return;
   let sx = 0, sy = 0, dx = 0, dragging = false;
-  card.addEventListener('pointerdown', (e) => { dragging = true; sx = e.clientX; sy = e.clientY; dx = 0; card.setPointerCapture(e.pointerId); card.style.transition = 'none'; });
+  card.addEventListener('pointerdown', (e) => { if (e.target.closest('a')) return; dragging = true; sx = e.clientX; sy = e.clientY; dx = 0; card.setPointerCapture(e.pointerId); card.style.transition = 'none'; });
   card.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     dx = e.clientX - sx;

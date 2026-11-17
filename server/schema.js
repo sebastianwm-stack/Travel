@@ -123,4 +123,9 @@ CREATE TABLE IF NOT EXISTS push_subs (
 `;
 
 // Zusätzliche Schritte für spätere Versionen (Index = Version - 1)
-export const MIGRATIONS = [];
+export const MIGRATIONS = [
+  // 1: Abschnitt des Tages (frueh, vormittag, mittag, nachmittag, abend) statt fester Uhrzeit
+  ['ALTER TABLE places ADD COLUMN slot TEXT'],
+  // 2: Unterkunft als Anker auf der Karte, JSON { name, lat, lng }
+  ['ALTER TABLE trips ADD COLUMN hotel TEXT'],
+];

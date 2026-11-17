@@ -41,7 +41,19 @@ export function heartsOf(placeId) {
 export const iHeart = (placeId) => S.data.hearts.some(([p, m]) => p === placeId && m === S.data.me.id);
 export const commentsOf = (target) => S.data.comments.filter((c) => c.target === target);
 
-const byTime = (a, b) => (a.time || '99:99').localeCompare(b.time || '99:99') || a.ord - b.ord;
+// Abschnitte des Tages (statt fester Uhrzeiten)
+export const SLOTS = ['frueh', 'vormittag', 'mittag', 'nachmittag', 'abend'];
+export const SLOT_LABEL = { frueh: 'Frühstück', vormittag: 'Vormittag', mittag: 'Mittag', nachmittag: 'Nachmittag', abend: 'Abend' };
+export function slotOf(p) {
+  if (SLOTS.includes(p.slot)) return p.slot;
+  if (!p.time) return null;
+  const [h, m] = p.time.split(':').map(Number);
+  const x = h + m / 60;
+  return x < 10.5 ? 'frueh' : x < 12 ? 'vormittag' : x < 14.5 ? 'mittag' : x < 17.5 ? 'nachmittag' : 'abend';
+}
+export const whenLabel = (p) => p.time || SLOT_LABEL[slotOf(p)] || 'Zeit offen';
+const slotIdx = (p) => { const s = slotOf(p); return s ? SLOTS.indexOf(s) : 9; };
+const byTime = (a, b) => slotIdx(a) - slotIdx(b) || (a.time || '99:99').localeCompare(b.time || '99:99') || a.ord - b.ord;
 export const stopsOf = (day) => S.data.places.filter((p) => p.day === day).sort(byTime);
 export const pool = () => S.data.places.filter((p) => !p.day);
 

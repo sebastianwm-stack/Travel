@@ -1,9 +1,10 @@
 // Wiederverwendbare Bausteine: Kopf mit Skyline, Ortskarten, Tageschips, Sticker.
 import { esc, ICON, avatar, fmtChip } from './ui.js';
 import { CATS } from './themes.js';
-import { S, heartsOf, iHeart, commentsOf, trip, member } from './state.js';
+import { S, heartsOf, iHeart, commentsOf, trip, member, whenLabel } from './state.js';
 import { themeFor, skylineSVG } from './themes.js';
 import { fileUrl } from './api.js';
+import { illusFor } from './illus.js';
 
 export const actions = {};
 export const register = (obj) => Object.assign(actions, obj);
@@ -43,18 +44,28 @@ export function dayChips(selected, { withPool = false, counts = true } = {}) {
 
 export const areaOf = (p) => (p.area && p.area.trim().toLowerCase() !== p.title.trim().toLowerCase() ? p.area : '');
 
-// Bild eines Ortes: https-Link direkt, eigenes Foto (file:<id>) wird nachgeladen
+// Bild eines Ortes: Foto (https-Link oder eigenes Foto file:<id>) über einer Illustration.
+// Fehlt das Foto oder lädt es nicht, bleibt die Illustration sichtbar.
 export function photo(p, cls = '') {
-  if (!p.image) return '';
   const alt = esc(p.title);
-  if (p.image.startsWith('file:')) return `<img class="ph ${cls}" data-file-img="${esc(p.image.slice(5))}" alt="${alt}">`;
-  return `<img class="ph ${cls}" src="${esc(p.image)}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  const c = CATS[p.cat] || CATS.Sehen;
+  const art = `<span class="illus" style="--bgc:${c.bg}" role="img" aria-label="${alt}">${illusFor(p)}</span>`;
+  let img = '';
+  if (p.image?.startsWith('file:')) img = `<img class="ph" data-file-img="${esc(p.image.slice(5))}" alt="${alt}">`;
+  else if (p.image) img = `<img class="ph" src="${esc(p.image)}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+  return `<span class="phw ${cls}">${art}${img}</span>`;
 }
 export function resolveImages(root) {
   root.querySelectorAll('img[data-file-img]').forEach(async (img) => {
     try { img.src = await fileUrl(img.dataset.fileImg); } catch { img.remove(); }
   });
-  root.querySelectorAll('img.ph').forEach((img) => img.addEventListener('error', () => img.classList.add('broken'), { once: true }));
+  // Foto lädt nicht: entfernen, dann ist die Illustration darunter zu sehen
+  root.querySelectorAll('img.ph').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+}
+
+export function mapsUrl(p) {
+  if (p.url && /google\.|goo\.gl/.test(p.url)) return p.url;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.title} ${p.area || ''} ${trip().dest || ''}`.trim())}`;
 }
 
 export function routeUrl(p) {
@@ -65,10 +76,10 @@ export function routeUrl(p) {
 export function stopCard(p, { walkAfter = '' } = {}) {
   const hs = heartsOf(p.id);
   const nc = commentsOf(`place:${p.id}`).length;
-  return `<article class="card ${p.booked ? 'booked' : ''} ${p.image ? 'has-ph' : ''}" data-act="openPlace" data-id="${p.id}" tabindex="0">
+  return `<article class="card has-ph ${p.booked ? 'booked' : ''}" data-act="openPlace" data-id="${p.id}" tabindex="0">
     ${p.booked ? '<span class="ok">gebucht ✓</span>' : ''}
-    ${p.image ? `<div class="card-ph">${photo(p)}</div>` : ''}
-    <div class="card-top"><span class="time">${esc(p.time || 'offen')}</span>${sticker(p.cat)}</div>
+    <div class="card-ph">${photo(p)}</div>
+    <div class="card-top"><span class="time">${esc(whenLabel(p))}</span>${sticker(p.cat)}</div>
     <h3 class="ti">${esc(p.title)}</h3>
     ${areaOf(p) ? `<p class="ar">${esc(areaOf(p))}</p>` : ''}
     ${p.note ? `<p class="note">${esc(p.note)}</p>` : ''}
@@ -83,7 +94,7 @@ export function ideaCard(p) {
   const nc = commentsOf(`place:${p.id}`).length;
   const by = member(p.createdBy);
   return `<article class="idea" data-act="openPlace" data-id="${p.id}" tabindex="0">
-    ${p.image ? `<div class="idea-ph">${photo(p)}</div>` : ''}
+    <div class="idea-ph">${photo(p)}</div>
     <div class="idea-main">
       <div class="card-top">${sticker(p.cat)}${p.day ? `<span class="daytag">${fmtChip(p.day)}${p.time ? ' · ' + esc(p.time) : ''}</span>` : ''}</div>
       <h3 class="ti sm">${esc(p.title)}</h3>

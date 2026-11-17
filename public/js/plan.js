@@ -1,20 +1,22 @@
-// Plan: der Tag als Route auf der Karte, darunter die Stopps als wischbare Karten.
-// Wer lieber liest, schaltet auf Liste um.
+// Plan: zwei Ansichten eines Tages.
+//  Ablauf: fünf lockere Abschnitte (Frühstück bis Abend); freie Abschnitte zeigen einen Vorschlag aus den Ideen.
+//  Karte: der Tag als Route, darunter die Stopps als wischbare Karten.
 import { esc, ICON, fmtLong, toast, openSheet, weekday, dayNum, monthName } from './ui.js';
-import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf } from './state.js';
+import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf, place, mutate, SLOTS, SLOT_LABEL, slotOf, whenLabel } from './state.js';
+import { api } from './api.js';
 import { dayChips, stopCard, sticker, avatars, empty, register, routeUrl, areaOf, photo } from './components.js';
 import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
-import { loadMapLib, baseMap, addPin, addRoute, hasCoords } from './map.js';
+import { loadMapLib, baseMap, addPin, addRoute, addHome, hasCoords } from './map.js';
 
-export const planUi = { day: null, mode: 'karte' };
+export const planUi = { day: null, mode: 'ablauf', draft: null, stamp: '', loading: false, alt: {}, skip: new Set() };
 let map = null;
 
 function miniCard(p, i) {
   const hs = heartsOf(p.id);
   const nc = commentsOf(`place:${p.id}`).length;
-  return `<article class="mini ${p.booked ? 'booked' : ''} ${p.image ? 'has-ph' : ''}" data-act="openPlace" data-id="${p.id}" data-i="${i}" tabindex="0">
-    ${p.image ? `<div class="mini-ph">${photo(p)}</div>` : ''}
-    <div class="mini-top"><span class="num">${i + 1}</span><span class="time">${esc(p.time || 'offen')}</span>${sticker(p.cat, 'sm')}${p.booked ? '<span class="okmini">gebucht</span>' : ''}</div>
+  return `<article class="mini has-ph ${p.booked ? 'booked' : ''}" data-act="openPlace" data-id="${p.id}" data-i="${i}" tabindex="0">
+    <div class="mini-ph">${photo(p)}</div>
+    <div class="mini-top"><span class="num">${i + 1}</span><span class="time">${esc(whenLabel(p))}</span>${sticker(p.cat, 'sm')}${p.booked ? '<span class="okmini">gebucht</span>' : ''}</div>
     <h3>${esc(p.title)}</h3>
     <p class="ar">${esc(areaOf(p))}</p>
     <div class="ft">${avatars(hs)}${nc ? `<span class="cnt">${ICON.chat}${nc}</span>` : ''}<a class="go" href="${routeUrl(p)}" target="_blank" rel="noopener" data-stop>Route →</a></div>
@@ -30,20 +32,16 @@ export function viewPlan() {
   const notes = commentsOf(`day:${d}`).length;
   const head = `<div class="plan-head">
       <div class="plan-title"><h1><small>${dayNum(d)}. ${monthName(d)}</small>${weekday(d)}</h1>
-        <div class="seg" role="group" aria-label="Ansicht"><button class="${planUi.mode === 'karte' ? 'on' : ''}" data-act="planMode" data-m="karte">Karte</button><button class="${planUi.mode === 'liste' ? 'on' : ''}" data-act="planMode" data-m="liste">Liste</button></div></div>
+        <div class="seg" role="group" aria-label="Ansicht"><button class="${planUi.mode === 'ablauf' ? 'on' : ''}" data-act="planMode" data-m="ablauf">Ablauf</button><button class="${planUi.mode === 'karte' ? 'on' : ''}" data-act="planMode" data-m="karte">Karte</button></div></div>
       ${dayChips(d)}
     </div>`;
   const tools = `<div class="plan-tools">
-      <button class="btn sm" data-act="suggest" data-day="${d}">${ICON.spark}Vorschlag</button>
+      <button class="btn sm" data-act="suggest">${ICON.spark}Reise vorplanen</button>
       <button class="btn sm" data-act="pickFromPool" data-day="${d}">${ICON.heart}Aus den Ideen</button>
       <button class="btn sm" data-act="dayNotes" data-day="${d}">${ICON.chat}Notizen${notes ? ` (${notes})` : ''}</button>
     </div>`;
 
-  if (planUi.mode === 'liste') {
-    return `<div class="plan-list">${head}<div class="page">${tools}
-      ${stops.length ? `<div class="list">${stops.map((p) => stopCard(p)).join('')}</div>` : empty('Der Tag ist noch frei', 'Holt euch Orte aus den Ideen oder lasst einen Vorschlag machen.')}
-    </div></div>`;
-  }
+  if (planUi.mode === 'ablauf') return `<div class="plan-list">${head}<div class="page">${tools}${ablauf(d)}</div></div>`;
   return `<div class="planmap">
     ${head}
     <div id="map" role="application" aria-label="Karte des Tages"></div>
@@ -59,6 +57,91 @@ export function viewPlan() {
       </div>
     </div>
   </div>`;
+}
+
+// ---------- Ablauf ----------
+const I = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const SLOT_IC = {
+  frueh: I('<path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v2M11 3v2"/>'),
+  vormittag: I('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>'),
+  mittag: I('<path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 3c-2 1-3 4-3 7h3v11"/>'),
+  nachmittag: I('<path d="M3 17h18M6 17a6 6 0 0 1 12 0M12 5v3M5 9l2 1.5M19 9l-2 1.5"/>'),
+  abend: I('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'),
+};
+function daySlotsOf(d) {
+  const t = trip();
+  const base = d === t.start ? ['abend'] : d === t.end ? ['frueh', 'vormittag'] : SLOTS;
+  const used = new Set(stopsOf(d).map(slotOf).filter(Boolean));
+  return SLOTS.filter((s) => base.includes(s) || used.has(s));
+}
+const HOME_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg>';
+const stampOf = () => S.data.places.map((p) => `${p.id}${p.day || ''}${p.slot || ''}${p.time || ''}`).join() + S.data.hearts.length + JSON.stringify(trip().hotel);
+
+function ensureDraft() {
+  const st = stampOf();
+  if (planUi.stamp === st || planUi.loading) return;
+  planUi.loading = true;
+  api('/plan/draft', { method: 'POST', body: {} })
+    .then((r) => { planUi.draft = r.draft; planUi.stamp = st; planUi.alt = {}; })
+    .catch(() => {})
+    .finally(() => { planUi.loading = false; window.dispatchEvent(new Event('rb:render')); });
+}
+// Aktueller Vorschlag für einen Abschnitt (mit "Andere" durchblättern)
+function suggestionFor(d, slot) {
+  const key = `${d}:${slot}`;
+  if (planUi.skip.has(key)) return null;
+  const e = planUi.draft?.[d]?.[slot];
+  if (!e) return null;
+  const list = [e.pick, ...e.alts].map(place).filter((p) => p && !p.day);
+  if (!list.length) return null;
+  return { p: list[(planUi.alt[key] || 0) % list.length], n: list.length };
+}
+
+function rowCard(p) {
+  const hs = heartsOf(p.id);
+  return `<article class="row-card ${p.booked ? 'booked' : ''}" data-act="openPlace" data-id="${p.id}" tabindex="0">
+    <div class="rc-ph">${photo(p)}</div>
+    <div class="rc-main"><b>${esc(p.title)}</b><span class="ar">${esc([p.time, areaOf(p)].filter(Boolean).join(' · '))}</span>
+      <span class="rc-ft">${sticker(p.cat, 'sm')}${p.booked ? '<span class="okmini">gebucht</span>' : ''}${avatars(hs, 'xs')}</span></div>
+  </article>`;
+}
+
+function ablauf(d) {
+  ensureDraft();
+  const stops = stopsOf(d);
+  const loose = stops.filter((p) => !slotOf(p));
+  let anySug = false;
+  const sections = daySlotsOf(d).map((slot) => {
+    const here = stops.filter((p) => slotOf(p) === slot);
+    let body = here.map(rowCard).join('');
+    if (!here.length) {
+      const sg = suggestionFor(d, slot);
+      if (sg) {
+        anySug = true;
+        const hs = heartsOf(sg.p.id);
+        body = `<div class="sugcard">
+          <div class="sc-ph" data-act="openPlace" data-id="${sg.p.id}">${photo(sg.p)}</div>
+          <div class="sc-main"><small>Vorschlag</small><b data-act="openPlace" data-id="${sg.p.id}">${esc(sg.p.title)}</b>
+            <span class="ar">${esc([areaOf(sg.p), hs.length ? `${hs.map((m) => m.name).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin` : ''].filter(Boolean).join(' · '))}</span>
+            <div class="sc-btns"><button class="btn sm primary" data-act="sugTake" data-day="${d}" data-slot="${slot}" data-id="${sg.p.id}">${ICON.check}Passt</button>
+              ${sg.n > 1 ? `<button class="btn sm" data-act="sugNext" data-day="${d}" data-slot="${slot}">${ICON.refresh}Andere</button>` : ''}
+              <button class="icon" data-act="sugSkip" data-day="${d}" data-slot="${slot}" aria-label="Frei lassen">${ICON.close}</button></div></div>
+        </div>`;
+      } else {
+        body = `<p class="slot-free">${planUi.loading && !planUi.draft ? 'Suche Vorschläge …' : 'Frei. Zeit zum Treibenlassen.'}</p>`;
+      }
+    }
+    return `<section class="slot ${here.length ? 'filled' : ''}"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${SLOT_IC[slot]}</span><h3>${SLOT_LABEL[slot]}</h3>
+      <button class="slot-add" data-act="addIdea" data-day="${d}" data-slot="${slot}" aria-label="Ort für ${SLOT_LABEL[slot]} hinzufügen">${ICON.plus}</button></div>${body}</section>`;
+  }).join('');
+  const t = trip();
+  const hint = d === t.start ? '<p class="hint">Anreisetag: Ankunft am späten Nachmittag, nach der Einreise bleibt der Abend.</p>'
+    : d === t.end ? '<p class="hint">Abreisetag: Der Vormittag ist noch frei, abends geht der Flug.</p>' : '';
+  const home = t.hotel ? `<div class="home-row">${HOME_IC}<span>${esc(t.hotel.name)}</span></div>` : '';
+  return `${hint}
+    ${anySug ? `<button class="btn primary wide" data-act="sugTakeAll" data-day="${d}">${ICON.check}Alle Vorschläge für ${weekday(d)} übernehmen</button>` : ''}
+    <div class="slots">${home && d !== t.start ? home.replace('home-row', 'home-row start') : ''}${sections}${home ? home.replace('home-row', 'home-row end') : ''}</div>
+    ${loose.length ? `<section class="slot"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${I('<circle cx="12" cy="12" r="3"/>')}</span><h3>Irgendwann</h3></div>${loose.map(rowCard).join('')}</section>` : ''}`;
 }
 
 export async function mountPlan(root) {
@@ -80,13 +163,17 @@ export async function mountPlan(root) {
     const i = all.indexOf(p);
     markers.set(i, { m: addPin(ml, map, p, String(i + 1), { onClick: () => scrollToCard(i) }), p });
   });
-  if (stops.length > 1) addRoute(map, stops);
-  const fitTo = stops.length ? stops : pool().filter(hasCoords);
+  const hotel = trip().hotel;
+  if (hotel) addHome(ml, map, hotel);
+  // Route: morgens von der Unterkunft los, abends dorthin zurück
+  const path = hotel && stops.length ? [hotel, ...stops, hotel] : stops;
+  if (path.length > 1) addRoute(map, path);
+  const fitTo = stops.length ? (hotel ? [...stops, hotel] : stops) : hotel ? [hotel, ...pool().filter(hasCoords)] : pool().filter(hasCoords);
   const bottomPad = root.querySelector('.carousel-wrap')?.offsetHeight || 200;
   if (fitTo.length) {
     const b = new ml.LngLatBounds();
     fitTo.forEach((p) => b.extend([p.lng, p.lat]));
-    map.fitBounds(b, { padding: { top: 160, bottom: bottomPad + 24, left: 40, right: 40 }, maxZoom: 15, duration: 0 });
+    map.fitBounds(b, { padding: { top: 170, bottom: bottomPad + 30, left: 50, right: 50 }, maxZoom: 12.8, duration: 0 });
   }
 
   // Karte folgt der Karte im Karussell
@@ -97,7 +184,15 @@ export async function mountPlan(root) {
     markers.get(active)?.m.getElement().classList.remove('active');
     active = i;
     const cur = markers.get(i);
-    if (cur) { cur.m.getElement().classList.add('active'); map.easeTo({ center: [cur.p.lng, cur.p.lat], duration: 500 }); }
+    if (cur) {
+      cur.m.getElement().classList.add('active');
+      // nur verschieben, wenn der Ort nicht ohnehin gut sichtbar ist; Zoom bleibt
+      const pt = map.project([cur.p.lng, cur.p.lat]);
+      const h = el.clientHeight, w = el.clientWidth, bottom = h - bottomPad - 20;
+      if (!(pt.x > 40 && pt.x < w - 40 && pt.y > 170 && pt.y < bottom)) {
+        map.easeTo({ center: [cur.p.lng, cur.p.lat], offset: [0, (170 - bottomPad) / 2], duration: 450 });
+      }
+    }
     car.querySelectorAll('.mini').forEach((c) => c.classList.toggle('on', Number(c.dataset.i) === i));
   };
   let raf;
@@ -120,7 +215,21 @@ export async function mountPlan(root) {
   }
 }
 
+window.addEventListener('rb:goto-day', (e) => { planUi.day = e.detail; window.dispatchEvent(new Event('rb:render')); });
+
 register({
+  sugTake: async (el) => {
+    try { await mutate('/plan/apply', { method: 'POST', body: { moves: [{ id: el.dataset.id, day: el.dataset.day, slot: el.dataset.slot }] } }); toast(`${place(el.dataset.id)?.title || 'Ort'} ist eingeplant`); } catch (e) { toast(e.message); }
+  },
+  sugNext: (el) => { const k = `${el.dataset.day}:${el.dataset.slot}`; planUi.alt[k] = (planUi.alt[k] || 0) + 1; window.dispatchEvent(new Event('rb:render')); },
+  sugSkip: (el) => { planUi.skip.add(`${el.dataset.day}:${el.dataset.slot}`); window.dispatchEvent(new Event('rb:render')); },
+  sugTakeAll: async (el) => {
+    const d = el.dataset.day;
+    const moves = daySlotsOf(d).map((slot) => ({ slot, sg: suggestionFor(d, slot) })).filter((x) => x.sg && !stopsOf(d).some((p) => slotOf(p) === x.slot))
+      .map((x) => ({ id: x.sg.p.id, day: d, slot: x.slot }));
+    if (!moves.length) return;
+    try { await mutate('/plan/apply', { method: 'POST', body: { moves } }); toast(`${moves.length} Orte für ${weekday(d)} eingeplant`); } catch (e) { toast(e.message); }
+  },
   planMode: (el) => { planUi.mode = el.dataset.m; window.dispatchEvent(new Event('rb:render')); },
   pickDay: (el) => { planUi.day = el.dataset.day; if (location.hash !== '#/plan') location.hash = '#/plan'; else window.dispatchEvent(new Event('rb:render')); },
   gotoDay: (el) => { planUi.day = el.dataset.day; location.hash = '#/plan'; },

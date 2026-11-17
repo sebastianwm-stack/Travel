@@ -88,7 +88,8 @@ export function parseList(data) {
     const ref = findString(e[1], (s) => /^0x[0-9a-f]+:0x[0-9a-f]+$/i.test(s)) || `${e[2]}@${lat.toFixed(4)},${lng.toFixed(4)}`;
     const address = findString(e[1], (s) => s.includes(',') && s.length > 6 && s !== e[2]) || '';
     const note = typeof e[3] === 'string' ? e[3] : '';
-    const photo = findString(e, (s) => /^https:\/\/lh\d\.googleusercontent\.com\//.test(s)) || '';
+    // Ortsfotos, nicht die Profilbilder der Personen, die den Ort gespeichert haben (/a-/)
+    const photo = findString(e[1], (s) => /^https:\/\/lh\d\.googleusercontent\.com\//.test(s) && !s.includes('/a-/')) || '';
     return { title: e[2], lat, lng, ref, address, note, photo };
   });
   return { title, places };

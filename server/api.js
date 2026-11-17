@@ -2,9 +2,9 @@
 // die App schickt ihn als "Authorization: Bearer …" mit. Gespeichert ist nur sein Hash.
 import { json, fail, sha256, rid, newToken, str, isDate, isTime, num, daysOf, addDays, localParts } from './util.js';
 import { validCat, guessCat } from './cats.js';
-import { suggestPlan } from './plan.js';
+import { suggestPlan, draftPlan, SLOTS } from './plan.js';
 import { syncTrip, resolveUrl } from './maps.js';
-import { ask } from './ai.js';
+import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
 import { validEndpoint, pushReady, pushToTrip, sendPush } from './push.js';
 
@@ -47,13 +47,13 @@ async function loadState(env, trip) {
 
 function tripOut(trip) {
   const { id, name, dest, theme, start, end, tz, home_tz, maps_url, maps_synced_at, briefing_hour } = trip;
-  return { id, name, dest, theme, start, end, tz, homeTz: home_tz, mapsUrl: maps_url, mapsSyncedAt: maps_synced_at, briefingHour: briefing_hour, days: daysOf(trip) };
+  return { id, name, dest, theme, start, end, tz, homeTz: home_tz, mapsUrl: maps_url, mapsSyncedAt: maps_synced_at, briefingHour: briefing_hour, days: daysOf(trip), hotel: safeJSON(trip.hotel || 'null', null) };
 }
 
 function placeOut(p) {
   return {
     id: p.id, title: p.title, area: p.area, cat: p.cat, note: p.note, lat: p.lat, lng: p.lng, approx: !!p.approx,
-    url: p.url, image: p.image, imageCredit: safeJSON(p.image_credit || 'null', null), imageTried: !!p.image_tried, source: p.source, day: p.day, time: p.time, ord: p.ord, booked: !!p.booked, hours: p.hours,
+    slot: p.slot || null, url: p.url, image: p.image, imageCredit: safeJSON(p.image_credit || 'null', null), imageTried: !!p.image_tried, source: p.source, day: p.day, time: p.time, ord: p.ord, booked: !!p.booked, hours: p.hours,
     createdBy: p.created_by, createdAt: p.created_at, updatedAt: p.updated_at,
   };
 }
@@ -217,6 +217,7 @@ export async function handleApi(request, env, url) {
     if ('tz' in b) f.tz = str(b.tz, 60) || trip.tz;
     if ('mapsUrl' in b) f.maps_url = str(b.mapsUrl, 500);
     if ('briefingHour' in b && Number.isInteger(b.briefingHour) && b.briefingHour >= 0 && b.briefingHour <= 23) f.briefing_hour = b.briefingHour;
+    if ('hotel' in b) f.hotel = b.hotel && num(b.hotel.lat) !== null && num(b.hotel.lng) !== null ? JSON.stringify({ name: str(b.hotel.name, 120) || 'Unterkunft', lat: num(b.hotel.lat), lng: num(b.hotel.lng) }) : null;
     const keys = Object.keys(f);
     if (keys.length) await env.DB.prepare(`UPDATE trips SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => f[k]), trip.id).run();
     return json({ ok: true });
@@ -249,6 +250,7 @@ export async function handleApi(request, env, url) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(id, trip.id, title, str(b.area, 120), b.cat ? validCat(b.cat) : guessCat(title + ' ' + (b.note || '')), str(b.note, 2000), num(b.lat ?? info.lat), num(b.lng ?? info.lng),
       str(info.url || b.url, 1000), b.link ? 'link' : 'manual', isDate(b.day) ? b.day : null, isTime(b.time) ? b.time : '', now, me.id, now, now).run();
+    if (SLOTS.includes(b.slot) && isDate(b.day)) await env.DB.prepare('UPDATE places SET slot = ? WHERE id = ?').bind(b.slot, id).run();
     await env.DB.prepare('INSERT OR IGNORE INTO hearts (place_id, member_id) VALUES (?, ?)').bind(id, me.id).run();
     return json({ id });
   }
@@ -263,7 +265,8 @@ export async function handleApi(request, env, url) {
       if ('area' in b) f.area = str(b.area, 120);
       if ('cat' in b) f.cat = validCat(b.cat);
       if ('note' in b) f.note = str(b.note, 2000);
-      if ('day' in b) f.day = isDate(b.day) ? b.day : null;
+      if ('day' in b) { f.day = isDate(b.day) ? b.day : null; if (!f.day) f.slot = null; }
+      if ('slot' in b) f.slot = SLOTS.includes(b.slot) ? b.slot : null;
       if ('time' in b && isTime(b.time)) f.time = b.time;
       if ('ord' in b && num(b.ord) !== null) f.ord = num(b.ord);
       if ('booked' in b) f.booked = b.booked ? 1 : 0;
@@ -299,22 +302,23 @@ export async function handleApi(request, env, url) {
     return json({ hearted: !has });
   }
 
-  // --- Tagesvorschlag ---
-  if (path === '/plan/suggest' && method === 'POST') {
+  // --- Tagesgerüst und Vorschläge ---
+  if (path === '/plan/draft' && method === 'POST') {
     const s = await loadState(env, trip);
     const hc = new Map();
     s.hearts.forEach((h) => hc.set(h.place_id, (hc.get(h.place_id) || 0) + 1));
     const days = daysOf(trip);
     const b = await body(request);
-    const onlyDays = Array.isArray(b.days) ? days.filter((d) => b.days.includes(d)) : days;
-    const moves = suggestPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), onlyDays, { perDay: Math.min(10, Math.max(2, Number(b.perDay) || 6)), lightDays: [trip.start, trip.end], dayStart: { [trip.start]: 18 } });
-    return json({ moves });
+    const draft = draftPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), days, { start: trip.start, end: trip.end, home: safeJSON(trip.hotel || 'null', null) });
+    if (Array.isArray(b.days)) for (const d of Object.keys(draft)) if (!b.days.includes(d)) delete draft[d];
+    return json({ draft });
   }
   if (path === '/plan/apply' && method === 'POST') {
     const b = await body(request);
     const moves = Array.isArray(b.moves) ? b.moves.slice(0, 200) : [];
     const stmts = moves.filter((x) => isDate(x.day) && isTime(x.time || '')).map((x) =>
-      env.DB.prepare('UPDATE places SET day = ?, time = ?, ord = ?, updated_at = ? WHERE id = ? AND trip_id = ?').bind(x.day, x.time || '', num(x.ord) ?? 0, now, x.id, trip.id));
+      env.DB.prepare('UPDATE places SET day = ?, slot = ?, time = ?, ord = ?, updated_at = ? WHERE id = ? AND trip_id = ?')
+        .bind(x.day, SLOTS.includes(x.slot) ? x.slot : null, x.time || '', num(x.ord) ?? now, now, x.id, trip.id));
     for (let k = 0; k < stmts.length; k += 50) await env.DB.batch(stmts.slice(k, k + 50));
     return json({ ok: true, applied: stmts.length });
   }
@@ -449,7 +453,9 @@ export async function handleApi(request, env, url) {
     const history = (Array.isArray(b.history) ? b.history : []).filter((h) => ['user', 'assistant'].includes(h.role)).map((h) => ({ role: h.role, content: str(h.content, 2000) }));
     const s = await loadState(env, trip);
     try {
-      return json(await ask(env, { trip, members: s.members, places: s.places, hearts: s.hearts, me, question, history }));
+      const input = { trip, members: s.members, places: s.places, hearts: s.hearts, me, question, history };
+      if (b.stream) return await askStream(env, input);
+      return json(await ask(env, input));
     } catch (e) {
       return fail(502, 'Der Reiseberater ist gerade nicht erreichbar. Versuch es gleich noch mal.');
     }

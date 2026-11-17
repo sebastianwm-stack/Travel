@@ -1,10 +1,11 @@
 // Bottom-Sheets: Ort im Detail, neue Idee, Reisebegleiter, Tagesvorschlag, Einladungslink.
 import { esc, linkify, ICON, avatar, openSheet, closeSheet, toast, fmtChip, fmtShort, ago } from './ui.js';
 import { api, fileUrl } from './api.js';
-import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh } from './state.js';
-import { sticker, avatars, routeUrl, register, photo, resolveImages } from './components.js';
+import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf } from './state.js';
+import { sticker, avatars, routeUrl, register, photo, resolveImages, mapsUrl } from './components.js';
 import { findImage } from './images.js';
 import { CAT_NAMES } from './themes.js';
+import { searchPlaces } from './search.js';
 
 // ---------- Kommentare (für Orte, Tage, ganze Reise) ----------
 export function thread(target, { placeholder = 'Schreib was dazu …' } = {}) {
@@ -90,10 +91,10 @@ export function openPlace(id) {
     if (!p) { closeSheet(); return; }
     const hs = heartsOf(p.id);
     const mine = iHeart(p.id);
-    const gmaps = p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.title} ${p.area || ''} ${trip().dest || ''}`)}`;
+    const gmaps = mapsUrl(p);
     const sheet = openSheet(`
       <div class="sh-head">${sticker(p.cat)}<button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
-      ${p.image ? `<figure class="sh-ph">${photo(p)}${p.imageCredit?.t ? `<figcaption>${p.imageCredit.l ? `<a href="${esc(p.imageCredit.l)}" target="_blank" rel="noopener">Foto: ${esc(p.imageCredit.t)}</a>` : `Foto: ${esc(p.imageCredit.t)}`}</figcaption>` : ''}</figure>` : ''}
+      <figure class="sh-ph ${p.image ? '' : 'art'}">${photo(p)}${p.image && p.imageCredit?.t ? `<figcaption>${p.imageCredit.l ? `<a href="${esc(p.imageCredit.l)}" target="_blank" rel="noopener">Foto: ${esc(p.imageCredit.t)}</a>` : `Foto: ${esc(p.imageCredit.t)}`}</figcaption>` : ''}</figure>
       <h2>${esc(p.title)}</h2>
       ${p.area ? `<p class="ar">${esc(p.area)}</p>` : ''}
       ${p.note ? `<p class="note big">${linkify(p.note)}</p>` : ''}
@@ -103,15 +104,15 @@ export function openPlace(id) {
         <a class="btn" href="${esc(gmaps)}" target="_blank" rel="noopener">${ICON.map}Maps</a>
       </div>
       ${hs.length ? `<p class="who">${avatars(hs)} ${hs.map((m) => esc(m.name)).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin</p>` : ''}
-      ${p.approx ? '<p class="hint">Lage nur ungefähr, bis die Google-Maps-Liste abgeglichen ist.</p>' : ''}
 
       <h4>Wann?</h4>
       <div class="chips wrap">
         <button class="chip ${!p.day ? 'on' : ''}" data-day="">Ohne Tag</button>
         ${trip().days.map((d) => `<button class="chip ${p.day === d ? 'on' : ''}" data-day="${d}">${fmtChip(d)}</button>`).join('')}
       </div>
+      ${p.day ? `<div class="chips wrap">${SLOTS.map((sl) => `<button class="chip ${slotOf(p) === sl ? 'on' : ''}" data-slot="${sl}">${SLOT_LABEL[sl]}</button>`).join('')}</div>` : ''}
       <div class="when">
-        <label>Uhrzeit <input type="time" value="${esc(p.time)}" data-time ${p.day ? '' : 'disabled'}></label>
+        <label>Genaue Uhrzeit <input type="time" value="${esc(p.time)}" data-time ${p.day ? '' : 'disabled'}></label>
         <label class="switch"><input type="checkbox" data-booked ${p.booked ? 'checked' : ''}> Gebucht</label>
       </div>
 
@@ -136,6 +137,9 @@ export function openPlace(id) {
     sheet.querySelectorAll('[data-day]').forEach((b) => b.addEventListener('click', async () => {
       const day = b.dataset.day || null;
       try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { day, ...(day ? {} : { time: '' }) } }); draw(); toast(day ? `Auf ${fmtShort(day)} gelegt` : 'Zurück in die Ideen'); } catch (e) { toast(e.message); }
+    }));
+    sheet.querySelectorAll('[data-slot]').forEach((b) => b.addEventListener('click', async () => {
+      try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { slot: b.dataset.slot, time: '' } }); draw(); } catch (e) { toast(e.message); }
     }));
     sheet.querySelector('[data-time]').addEventListener('change', async (e) => {
       try { await mutate(`/places/${p.id}`, { method: 'PATCH', body: { time: e.target.value } }); } catch (err) { toast(err.message); }
@@ -178,28 +182,48 @@ export function openPlace(id) {
 }
 
 // ---------- Neue Idee ----------
-export function openAddIdea({ day = null } = {}) {
+export function openAddIdea({ day = null, slot = null } = {}) {
   current = null;
   const sheet = openSheet(`
-    <div class="sh-head"><h2>Neue Idee</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
-    <p class="hint">In Google Maps auf Teilen tippen, den Link kopieren und hier einfügen. Ein Name reicht auch.</p>
-    <form class="form" data-add>
-      <label>Google-Maps-Link<input name="link" inputmode="url" placeholder="https://maps.app.goo.gl/…" autofocus></label>
-      <label>oder Name<input name="title" maxlength="200" placeholder="z. B. Joe's Pizza"></label>
-      <label>Kategorie<select name="cat"><option value="">automatisch</option>${CAT_NAMES.map((c) => `<option>${c}</option>`).join('')}</select></label>
-      <label>Notiz<textarea name="note" rows="2" maxlength="2000" placeholder="Warum wollen wir da hin?"></textarea></label>
-      ${day ? `<p class="hint">Landet direkt auf ${fmtShort(day)}.</p>` : ''}
-      <button class="btn primary big">${ICON.plus}Hinzufügen</button>
-    </form>`);
-  sheet.querySelector('[data-add]').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target));
-    if (!f.link && !f.title) { toast('Link oder Name fehlt'); return; }
-    if (!f.cat) delete f.cat;
-    if (day) f.day = day;
-    e.target.classList.add('busy');
-    try { const r = await mutate('/places', { method: 'POST', body: f }); closeSheet(); toast('Idee ist drin'); openPlace(r.id); }
-    catch (err) { toast(err.message); e.target.classList.remove('busy'); }
+    <div class="sh-head"><h2>${day ? `Ort für ${fmtShort(day)}${slot ? `, ${SLOT_LABEL[slot]}` : ''}` : 'Neue Idee'}</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
+    <input class="search big" type="search" placeholder="Ort suchen, z. B. Joe's Pizza" autocomplete="off" aria-label="Ort suchen" autofocus data-q>
+    <div class="results" aria-live="polite"><p class="hint">Name tippen und Treffer antippen. Ein Google-Maps-Link geht auch.</p></div>`, { tall: true });
+  const input = sheet.querySelector('[data-q]');
+  const box = sheet.querySelector('.results');
+  const withCoords = S.data.places.filter((p) => Number.isFinite(p.lat));
+  const near = withCoords.length ? { lat: withCoords.reduce((n, p) => n + p.lat, 0) / withCoords.length, lng: withCoords.reduce((n, p) => n + p.lng, 0) / withCoords.length } : null;
+  let results = [];
+  let timer, seq = 0;
+  const create = async (body) => {
+    box.classList.add('busy');
+    try {
+      const r = await mutate('/places', { method: 'POST', body: { ...body, ...(day ? { day } : {}), ...(slot ? { slot } : {}) } });
+      closeSheet(); toast('Ist drin'); openPlace(r.id);
+    } catch (err) { toast(err.message); box.classList.remove('busy'); }
+  };
+  const draw = (q) => {
+    const isLink = /^https?:\/\//.test(q);
+    if (isLink) { box.innerHTML = `<button class="res" data-link>${ICON.link}<span><b>Link übernehmen</b><small>${esc(q.slice(0, 60))}</small></span></button>`; return; }
+    box.innerHTML = results.map((r, i) => `<button class="res" data-i="${i}">${sticker(r.cat, 'sm')}<span><b>${esc(r.title)}</b><small>${esc(r.address || r.area)}</small></span></button>`).join('')
+      + (q.length > 1 ? `<button class="res plain" data-free>${ICON.plus}<span><b>"${esc(q)}" ohne genaue Lage hinzufügen</b></span></button>` : '');
+  };
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (/^https?:\/\//.test(q) || q.length < 2) { results = []; draw(q); return; }
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      try { const r = await searchPlaces(q, near); if (mine === seq) { results = r; draw(q); } }
+      catch (err) { if (mine === seq) { results = []; draw(q); } }
+    }, 280);
+  });
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const q = input.value.trim();
+    if (b.hasAttribute('data-link')) create({ link: q });
+    else if (b.hasAttribute('data-free')) create({ title: q });
+    else { const r = results[Number(b.dataset.i)]; create({ title: r.title, area: r.area, lat: r.lat, lng: r.lng, cat: r.cat }); }
   });
 }
 
@@ -235,12 +259,20 @@ export function openAsk(prefill = '') {
     chat.scrollTop = chat.scrollHeight;
     ta.value = '';
     try {
-      const r = await api('/ask', { method: 'POST', body: { question: q, history: h } });
-      h.push({ role: 'user', content: q }, { role: 'assistant', content: r.answer });
+      const answer = await askStreaming(q, h, (text) => {
+        const bubble = chat.querySelector('.msg.a.busy, .msg.a.live');
+        if (!bubble) return;
+        bubble.classList.remove('busy'); bubble.classList.add('live');
+        bubble.outerHTML = msgHTML({ role: 'assistant', content: text }).replace('class="msg a"', 'class="msg a live"');
+        chat.scrollTop = chat.scrollHeight;
+      });
+      h.push({ role: 'user', content: q }, { role: 'assistant', content: answer });
       saveHist(h);
-      chat.querySelector('.busy').outerHTML = msgHTML({ role: 'assistant', content: r.answer });
+      const live = chat.querySelector('.msg.a.live, .msg.a.busy');
+      if (live) live.outerHTML = msgHTML({ role: 'assistant', content: answer || 'Darauf habe ich gerade keine Antwort.' });
     } catch (e) {
-      chat.querySelector('.busy').outerHTML = `<div class="msg a err">${esc(e.message)}</div>`;
+      const b = chat.querySelector('.msg.a.busy, .msg.a.live');
+      if (b) b.outerHTML = `<div class="msg a err">${esc(e.message)}</div>`;
     }
     chat.scrollTop = chat.scrollHeight;
   };
@@ -250,6 +282,29 @@ export function openAsk(prefill = '') {
   sheet.querySelector('[data-reset]')?.addEventListener('click', () => { saveHist([]); openAsk(); });
   if (prefill) send(prefill);
 }
+// Antwort Stück für Stück lesen (Server-Sent Events)
+async function askStreaming(question, history, onText) {
+  const res = await api('/ask', { method: 'POST', body: { question, history, stream: true }, raw: true });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', text = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const l = line.trim();
+      if (!l.startsWith('data:')) continue;
+      const data = l.slice(5).trim();
+      if (data === '[DONE]') continue;
+      try { const j = JSON.parse(data); if (j.response) { text += j.response; onText(text); } } catch { /* unvollständig */ }
+    }
+  }
+  return text.trim();
+}
+
 function msgHTML(m) {
   if (m.role === 'user') return `<div class="msg u">${esc(m.content)}</div>`;
   // einfache Formatierung: **fett**, Listenpunkte, Absätze
@@ -264,27 +319,24 @@ function msgHTML(m) {
 }
 
 // ---------- Tagesvorschlag ----------
-export async function openSuggest(days) {
+export async function openSuggest() {
   current = null;
-  let moves;
-  try { moves = (await api('/plan/suggest', { method: 'POST', body: days ? { days } : {} })).moves; }
+  let draft;
+  try { draft = (await api('/plan/draft', { method: 'POST', body: {} })).draft; }
   catch (e) { toast(e.message); return; }
-  if (!moves.length) { toast('Keine passenden Ideen ohne Tag gefunden.'); return; }
+  const rows = Object.entries(draft).flatMap(([d, slots]) => Object.entries(slots).map(([slot, e]) => ({ d, slot, p: place(e.pick) }))).filter((x) => x.p);
+  if (!rows.length) { toast('Alle Abschnitte sind schon belegt, oder es gibt keine passenden Ideen mehr.'); return; }
   const byDay = {};
-  for (const mv of moves) (byDay[mv.day] = byDay[mv.day] || []).push(mv);
+  rows.forEach((r) => (byDay[r.d] = byDay[r.d] || []).push(r));
   const sheet = openSheet(`
-    <div class="sh-head"><h2>${ICON.spark} Vorschlag</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
-    <p class="hint">Nahe Orte landen am selben Tag, Ideen mit vielen Herzen kommen zuerst dran. Verschieben könnt ihr danach alles.</p>
+    <div class="sh-head"><h2>${ICON.spark} Reise vorplanen</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
+    <p class="hint">Für jeden freien Abschnitt ein Vorschlag aus euren Ideen: was viele Herzen hat und zur Gegend des Tages passt. Was ihr nicht wollt, abwählen. Ändern könnt ihr danach alles.</p>
     ${Object.entries(byDay).map(([d, list]) => `<div class="sug-day"><h4>${fmtShort(d)}</h4>
-      ${list.map((mv) => { const p = place(mv.id); return `<label class="sug"><input type="checkbox" checked data-mv="${mv.id}"><span class="time">${mv.time}</span>${sticker(p.cat, 'sm')}<b>${esc(p.title)}</b></label>`; }).join('')}</div>`).join('')}
+      ${list.map((r) => `<label class="sug"><input type="checkbox" checked data-id="${r.p.id}" data-day="${r.d}" data-slot="${r.slot}"><span class="time">${SLOT_LABEL[r.slot]}</span><b>${esc(r.p.title)}</b>${sticker(r.p.cat, 'sm')}</label>`).join('')}</div>`).join('')}
     <button class="btn primary big" data-apply>${ICON.check}Übernehmen</button>`, { tall: true });
   sheet.querySelector('[data-apply]').addEventListener('click', async () => {
-    const keep = new Set([...sheet.querySelectorAll('[data-mv]:checked')].map((c) => c.dataset.mv));
-    try {
-      const r = await mutate('/plan/apply', { method: 'POST', body: { moves: moves.filter((m) => keep.has(m.id)) } });
-      closeSheet();
-      toast(`${r.applied} Orte verplant`);
-    } catch (e) { toast(e.message); }
+    const moves = [...sheet.querySelectorAll('input[data-id]:checked')].map((c) => ({ id: c.dataset.id, day: c.dataset.day, slot: c.dataset.slot }));
+    try { const r = await mutate('/plan/apply', { method: 'POST', body: { moves } }); closeSheet(); toast(`${r.applied} Orte eingeplant`); } catch (e) { toast(e.message); }
   });
 }
 
@@ -312,8 +364,8 @@ register({
     e.stopPropagation();
     try { await mutate(`/places/${el.dataset.id}/heart`, { method: 'POST' }); } catch (err) { toast(err.message); }
   },
-  addIdea: (el) => openAddIdea({ day: el.dataset.day || null }),
+  addIdea: (el) => openAddIdea({ day: el.dataset.day || null, slot: el.dataset.slot || null }),
   ask: (el) => openAsk(el.dataset.q || ''),
-  suggest: (el) => openSuggest(el.dataset.day ? [el.dataset.day] : null),
+  suggest: () => openSuggest(),
   reload: () => refresh().catch((e) => toast(e.message)),
 });

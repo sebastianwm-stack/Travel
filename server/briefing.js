@@ -11,7 +11,8 @@ export function briefingFor(trip, places, tomorrow) {
   const title = isFirst ? `Morgen geht es nach ${trip.dest || trip.name}` : isLast ? 'Morgen ist schon der letzte Tag' : 'Morgen auf dem Plan';
   if (!ps.length) return { title, body: 'Für morgen steht noch nichts fest. In den Ideen liegt genug, oder ihr fragt den Reiseberater.' };
   const first = ps[0];
-  const parts = ps.slice(0, 5).map((p) => `${p.time ? p.time + ' ' : ''}${p.title}`);
+  const LABEL = { frueh: 'Frühstück', vormittag: 'Vormittags', mittag: 'Mittags', nachmittag: 'Nachmittags', abend: 'Abends' };
+  const parts = ps.slice(0, 5).map((p) => `${p.time ? p.time + ' ' : p.slot ? LABEL[p.slot] + ': ' : ''}${p.title}`);
   const more = ps.length > 5 ? ` und ${ps.length - 5} mehr` : '';
   const booked = ps.filter((p) => p.booked).map((p) => p.title);
   let body = parts.join(' · ') + more + '.';

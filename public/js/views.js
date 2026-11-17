@@ -7,6 +7,7 @@ import { storyRing, openStory } from './story.js';
 import { deck, swipeHTML, mountSwipe } from './swipe.js';
 import { CATS, CAT_NAMES, THEMES } from './themes.js';
 import { api } from './api.js';
+import { searchPlaces } from './search.js';
 import { pushState, enablePush, disablePush, testPush } from './push.js';
 
 export const ui = { cat: 'Alle', onlyOpen: true, q: '', ideasMode: null };
@@ -79,7 +80,7 @@ function favorites() {
     .sort((a, b) => b.h.length - a.h.length || a.p.title.localeCompare(b.p.title, 'de')).slice(0, 8);
   if (!ranked.length) return '';
   return `<section class="block"><div class="block-h"><h2>Lieblinge der Bande</h2></div>
-    <div class="favs">${ranked.map(({ p, h }) => `<button class="fav ${p.image ? 'has-ph' : ''}" data-act="openPlace" data-id="${p.id}" style="--bg:${(CATS[p.cat] || CATS.Sehen).bg};--fg:${(CATS[p.cat] || CATS.Sehen).fg}">${p.image ? photo(p, 'fav-ph') : ''}
+    <div class="favs">${ranked.map(({ p, h }) => `<button class="fav has-ph" data-act="openPlace" data-id="${p.id}" style="--bg:${(CATS[p.cat] || CATS.Sehen).bg};--fg:${(CATS[p.cat] || CATS.Sehen).fg}">${photo(p, 'fav-ph')}
       ${h.length === n ? '<span class="fav-m">alle</span>' : ''}<b>${esc(shortTitle(p.title))}</b><span class="avs xs">${h.map((m) => avatar(m)).join('')}</span>
       ${p.day ? `<small>${fmtChip(p.day)}</small>` : '<small>noch ohne Tag</small>'}</button>`).join('')}</div></section>`;
 }
@@ -139,7 +140,6 @@ export function viewIdeas() {
       </div>
       <label class="switch small"><input type="checkbox" data-act="toggleOpen" ${ui.onlyOpen ? 'checked' : ''}> Nur Ideen ohne Tag</label>
       ${list.length ? `<div class="ideas">${list.map(ideaCard).join('')}</div>` : empty('Nichts gefunden', q ? 'Versuch einen anderen Suchbegriff.' : 'Hier landen alle Orte, die noch keinen Tag haben.')}
-      ${t.mapsUrl ? `<div class="sync"><span>${ICON.map}<b>Google-Maps-Liste</b><small>${synced}</small></span><button class="btn sm" data-act="syncMaps">${ICON.refresh}Abgleichen</button></div>` : ''}
     </div>${askBar()}`;
 }
 
@@ -155,7 +155,19 @@ export function viewInfos() {
   <div class="page">
     <section class="block"><div class="block-h"><h2>Flüge und Hotel</h2></div>
       ${travel.map((i) => `<details class="info"><summary><span class="ic">${icon[i.kind] || ICON.doc}</span><span><b>${esc(i.title)}</b>${i.kind === 'stay' && i.data.from ? `<small>${fmtShort(i.data.from)} bis ${fmtShort(i.data.to)}</small>` : i.data.status ? `<small>${esc(i.data.status)}</small>` : ''}</span></summary>
-        ${i.note ? `<p>${esc(i.note)}</p>` : ''}${i.data.link ? `<p><a href="${esc(i.data.link)}" target="_blank" rel="noopener">Buchung ansehen</a></p>` : ''}</details>`).join('') || '<p class="hint">Noch nichts eingetragen.</p>'}
+        ${i.note ? `<p>${esc(i.note)}</p>` : ''}${i.data.link ? `<p><a href="${esc(i.data.link)}" target="_blank" rel="noopener">Buchung ansehen</a></p>` : ''}
+        ${isAdmin ? `<p><button class="link" data-act="delItem" data-id="${i.id}">${ICON.trash}Entfernen</button></p>` : ''}</details>`).join('') || '<p class="hint">Noch nichts eingetragen.</p>'}
+      ${isAdmin ? `<details class="edit"><summary>${ICON.plus} Flug, Hotel oder Anreise eintragen</summary>
+        <form class="form" data-additem>
+          <label>Art<select name="kind"><option value="flight">Flug</option><option value="stay">Unterkunft</option><option value="transport">Anreise, Zug, Auto</option></select></label>
+          <label>Titel<input name="title" required maxlength="300" placeholder="z. B. Lufthansa FRA nach JFK"></label>
+          <label>Notiz<textarea name="note" rows="2" maxlength="2000" placeholder="Abflugzeit, Buchungsnummer, wer die Tickets hat"></textarea></label>
+          <button class="btn primary">Eintragen</button></form></details>` : ''}
+    </section>
+
+    <section class="block"><div class="block-h"><h2>Unterkunft auf der Karte</h2></div>
+      <div class="mem"><span class="ic">${ICON.bed}</span><span><b>${esc(t.hotel?.name || 'Noch nicht festgelegt')}</b><small>${t.hotel ? 'Startpunkt und Ziel jedes Tages' : 'Dann starten und enden die Tage dort.'}</small></span>
+        ${isAdmin ? `<button class="btn sm" data-act="setHotel">${t.hotel ? 'Ändern' : 'Festlegen'}</button>` : ''}</div>
     </section>
 
     <section class="block"><div class="block-h"><h2>Die Bande</h2></div>
@@ -186,7 +198,6 @@ export function viewInfos() {
         <div class="two"><label>Von<input type="date" name="start" value="${esc(t.start || '')}"></label><label>Bis<input type="date" name="end" value="${esc(t.end || '')}"></label></div>
         <label>Gestaltung<select name="theme">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}" ${k === t.theme ? 'selected' : ''}>${v.label}</option>`).join('')}</select></label>
         <label>Zeitzone am Ziel<input name="tz" value="${esc(t.tz)}"></label>
-        <label>Google-Maps-Liste (Teilen-Link)<input name="mapsUrl" value="${esc(t.mapsUrl)}" inputmode="url"></label>
         <label>Briefing um (Uhr)<input name="briefingHour" type="number" min="0" max="23" value="${t.briefingHour}"></label>
         <button class="btn primary">Speichern</button>
       </form></section>` : ''}
@@ -209,6 +220,10 @@ export function mountView(root, name) {
     f.briefingHour = Number(f.briefingHour);
     try { await mutate('/trip', { method: 'PATCH', body: f }); toast('Gespeichert'); } catch (err) { toast(err.message); }
   });
+  root.querySelector('form[data-additem]')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try { await mutate('/items', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); toast('Eingetragen'); } catch (err) { toast(err.message); }
+  });
   const ver = root.querySelector('#ver');
   if (ver) fetch('/version.txt', { cache: 'no-store' }).then((r) => r.text()).then((v) => { ver.textContent = `Version ${v.trim()}`; }).catch(() => {});
 }
@@ -229,12 +244,43 @@ register({
     catch (err) { toast(err.message, 6000); }
     el.disabled = false; el.classList.remove('busy');
   },
-  announce: async () => {
-    const text = prompt('Nachricht an alle (kommt als Benachrichtigung):');
-    if (!text?.trim()) return;
-    try { const r = await mutate('/announce', { method: 'POST', body: { text } }); toast(r.sent ? `An ${r.sent} Geräte geschickt` : 'Gespeichert. Benachrichtigungen hat noch niemand eingeschaltet.'); } catch (err) { toast(err.message); }
+  announce: () => {
+    const sheet = openSheet(`<div class="sh-head"><h2>Nachricht an alle</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
+      <p class="hint">Kommt bei allen als Benachrichtigung an und steht oben auf Heute, zum Beispiel ein Treffpunkt.</p>
+      <form class="form" data-ann><textarea name="text" rows="3" maxlength="300" placeholder="Treffpunkt 15 Uhr in der Hotel-Lobby" autofocus></textarea>
+      <button class="btn primary big">${ICON.send}Schicken</button></form>`);
+    sheet.querySelector('[data-ann]').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = e.target.text.value.trim();
+      if (!text) return;
+      try { const r = await mutate('/announce', { method: 'POST', body: { text } }); closeSheet(); toast(r.sent ? `An ${r.sent} Geräte geschickt` : 'Gespeichert. Benachrichtigungen hat noch niemand eingeschaltet.'); } catch (err) { toast(err.message); }
+    });
   },
   pickFromPool: (el) => pickFromPool(el.dataset.day),
+  setHotel: () => {
+    const sheet = openSheet(`<div class="sh-head"><h2>Unterkunft</h2><button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
+      <input class="search big" type="search" placeholder="Hotel oder Adresse suchen" autocomplete="off" autofocus data-q aria-label="Unterkunft suchen">
+      <div class="results"></div>`, { tall: true });
+    const input = sheet.querySelector('[data-q]'); const box = sheet.querySelector('.results');
+    const withCoords = S.data.places.filter((p) => Number.isFinite(p.lat));
+    const near = withCoords.length ? { lat: withCoords[0].lat, lng: withCoords[0].lng } : null;
+    let results = []; let timer;
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 2) { box.innerHTML = ''; return; }
+      timer = setTimeout(async () => {
+        try { results = await searchPlaces(q, near); } catch { results = []; }
+        box.innerHTML = results.map((r, i) => `<button class="res" data-i="${i}">${ICON.bed}<span><b>${esc(r.title)}</b><small>${esc(r.address || r.area)}</small></span></button>`).join('') || '<p class="hint">Nichts gefunden.</p>';
+      }, 280);
+    });
+    box.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-i]'); if (!b) return;
+      const r = results[Number(b.dataset.i)];
+      try { await mutate('/trip', { method: 'PATCH', body: { hotel: { name: r.title, lat: r.lat, lng: r.lng } } }); closeSheet(); toast('Unterkunft gespeichert'); } catch (err) { toast(err.message); }
+    });
+  },
+  delItem: async (el) => { if (!confirm('Eintrag entfernen?')) return; try { await mutate(`/items/${el.dataset.id}`, { method: 'DELETE' }); } catch (err) { toast(err.message); } },
   pushOn: async () => { try { await enablePush(); window.dispatchEvent(new Event('rb:render')); toast('Benachrichtigungen sind an'); } catch (e) { toast(e.message, 5000); } },
   pushOff: async () => { await disablePush(); window.dispatchEvent(new Event('rb:render')); },
   testPush: async () => { try { const r = await testPush(); toast(r.ok ? 'Ist unterwegs' : 'Es kam keine Benachrichtigung an'); } catch (e) { toast(e.message); } },

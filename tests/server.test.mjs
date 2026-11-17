@@ -192,3 +192,49 @@ test('Schema lässt sich mehrfach ausführen (neue Isolates)', async () => {
   for (let round = 0; round < 2; round++) for (const s of stmts) db.exec(s);
   assert.ok(stmts.every((s) => /IF NOT EXISTS/.test(s)), 'jedes CREATE braucht IF NOT EXISTS');
 });
+
+test('Tagesvorschlag: Ausreißer werden zum Abstecher am späten Nachmittag', () => {
+  const manhattan = [[40.71, -74.01], [40.712, -74.008], [40.709, -74.012], [40.75, -73.99], [40.752, -73.988], [40.749, -73.991]];
+  const places = manhattan.map(([lat, lng], i) => ({ id: 'm' + i, lat, lng, cat: 'Sehen', day: null, ord: i }));
+  places.push({ id: 'dyker', lat: 40.6215, lng: -74.013, cat: 'Weihnachten', day: null, hearts: 5 });
+  const moves = suggestPlan(places, ['2026-12-18', '2026-12-19'], { perDay: 4 });
+  const dyker = moves.find((m) => m.id === 'dyker');
+  assert.ok(dyker, 'Ausreißer wird trotzdem eingeplant');
+  assert.equal(dyker.note, 'Abstecher, etwas weiter weg');
+  assert.ok(dyker.time >= '17:30');
+  // Die Manhattan-Gruppen bleiben getrennt nach Gegend
+  const dayOf = Object.fromEntries(moves.map((m) => [m.id, m.day]));
+  assert.equal(new Set(['m0', 'm1', 'm2'].map((id) => dayOf[id])).size, 1);
+});
+
+test('Tagesvorschlag: feste Termine bleiben frei', () => {
+  const fixed = { id: 'show', lat: 40.76, lng: -73.98, cat: 'Kultur', day: '2026-12-19', time: '11:00', hours: 2 };
+  const places = [fixed, ...[0, 1, 2, 3].map((i) => ({ id: 'p' + i, lat: 40.76 + i * 0.001, lng: -73.98, cat: 'Sehen', day: null }))];
+  const moves = suggestPlan(places, ['2026-12-19'], { perDay: 6 });
+  const h = (t) => { const [a, b] = t.split(':').map(Number); return a + b / 60; };
+  for (const m of moves) {
+    const s = h(m.time);
+    assert.ok(s + 1.25 <= 10.5 || s >= 13, `${m.time} kollidiert mit dem Termin um 11:00`);
+  }
+});
+
+test('Tagesgerüst: Vorschläge passen zum Abschnitt, belegte Abschnitte bleiben frei', async () => {
+  const { draftPlan } = await import('../server/plan.js');
+  const at = (i) => ({ lat: 40.72 + i * 0.001, lng: -73.99 });
+  const places = [
+    { id: 'cafe', cat: 'Café', title: 'Bagels', ...at(0), hearts: 2 },
+    { id: 'pizza', cat: 'Essen', title: 'Pizza', ...at(1), hearts: 1 },
+    { id: 'park', cat: 'Natur', title: 'Park', ...at(2), hearts: 3 },
+    { id: 'shop', cat: 'Shopping', title: 'Laden', ...at(3) },
+    { id: 'lights', cat: 'Weihnachten', title: 'Christmas lights', ...at(4) },
+    { id: 'fixed', cat: 'Kultur', title: 'Show', ...at(5), day: '2026-12-19', time: '20:00' },
+  ];
+  const d = draftPlan(places, ['2026-12-18', '2026-12-19', '2026-12-20'], { start: '2026-12-18', end: '2026-12-20' });
+  assert.deepEqual(Object.keys(d['2026-12-18']).filter((s) => s !== 'abend'), [], 'Anreisetag nur abends');
+  const mid = d['2026-12-19'];
+  assert.equal(mid.abend, undefined, 'Abend ist durch die Show belegt');
+  if (mid.frueh) assert.equal(mid.frueh.pick, 'cafe');
+  if (mid.mittag) assert.equal(mid.mittag.pick, 'pizza');
+  const picks = Object.values(d).flatMap((x) => Object.values(x).map((e) => e.pick));
+  assert.equal(new Set(picks).size, picks.length, 'kein Ort doppelt vorgeschlagen');
+});

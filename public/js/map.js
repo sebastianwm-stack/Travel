@@ -51,4 +51,13 @@ export function addRoute(map, points) {
   if (map.isStyleLoaded()) add(); else map.once('load', add);
 }
 
+// Die Unterkunft: eigener Pin mit Haus, immer sichtbar
+export function addHome(ml, map, hotel) {
+  const el = document.createElement('div');
+  el.className = 'home-pin';
+  el.setAttribute('aria-label', hotel.name);
+  el.innerHTML = `<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg></span><b>${hotel.name.replace(/</g, '')}</b>`;
+  return new ml.Marker({ element: el, anchor: 'bottom' }).setLngLat([hotel.lng, hotel.lat]).addTo(map);
+}
+
 export const hasCoords = (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng);

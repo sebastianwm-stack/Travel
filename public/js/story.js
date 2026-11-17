@@ -1,6 +1,6 @@
 // Stories: ein Tag als Folge von Vollbild-Seiten, eine pro Stopp. Tippen rechts/links blättert.
 import { esc, ICON, weekday, dayNum, monthName, avatar } from './ui.js';
-import { S, trip, stopsOf, heartsOf, commentsOf } from './state.js';
+import { S, trip, stopsOf, heartsOf, commentsOf, whenLabel } from './state.js';
 import { CATS, themeFor, skylineSVG } from './themes.js';
 import { routeUrl, areaOf, photo, resolveImages } from './components.js';
 import { openPlace } from './sheets.js';
@@ -10,6 +10,7 @@ let state = null;
 export function openStory(day) {
   const stops = stopsOf(day);
   state = { day, stops, i: 0 };
+  markSeen(day);
   const el = document.getElementById('story');
   el.hidden = false;
   document.body.classList.add('locked');
@@ -38,12 +39,12 @@ function draw() {
     fg = th.ink;
     const idx = t.days.indexOf(day);
     slide = `<div class="slide cover" style="--bg:${th.hero};--fg:${th.ink};--orb:${th.orb}">
-      <div class="orb" aria-hidden="true"></div>${skylineSVG(th)}
+      ${stops.length ? `<div class="collage n${Math.min(4, stops.length)}">${stops.slice(0, 4).map((p) => photo(p)).join('')}</div>` : `<div class="orb" aria-hidden="true"></div>${skylineSVG(th)}`}
       <div class="slide-in">
         <p class="kick">Tag ${idx + 1} von ${t.days.length}</p>
         <h2>${weekday(day)},<br>${dayNum(day)}. ${monthName(day)}</h2>
         <p class="lead">${stops.length ? `${stops.length} ${stops.length === 1 ? 'Stopp' : 'Stopps'}: ${stops.slice(0, 4).map((p) => esc(p.title.replace(/\s*\(.*\)/, ''))).join(', ')}${stops.length > 4 ? ' …' : ''}` : 'Noch nichts geplant.'}</p>
-        ${stops.length ? '<p class="tap">Tippen zum Weiterblättern</p>' : ''}
+        ${stops.length ? '<p class="tap">Tippen zum Weiterblättern</p>' : `<button class="btn" data-plan-day="${day}" data-noflip>Tag planen</button>`}
       </div></div>`;
   } else {
     const p = stops[i - 1];
@@ -51,10 +52,10 @@ function draw() {
     fg = c.fg;
     const hs = heartsOf(p.id);
     const nc = commentsOf(`place:${p.id}`).length;
-    slide = `<div class="slide stop ${p.image ? 'with-ph' : ''}" style="--bg:${c.bg};--fg:${c.fg}">
-      ${p.image ? `<div class="slide-ph">${photo(p)}</div>` : ''}
+    slide = `<div class="slide stop with-ph" style="--bg:${c.bg};--fg:${c.fg}">
+      <div class="slide-ph">${photo(p)}</div>
       <div class="slide-in">
-        <p class="kick">${esc(p.time || 'Uhrzeit offen')}${p.booked ? ' · gebucht' : ''}</p>
+        <p class="kick">${esc(whenLabel(p))}${p.booked ? ' · gebucht' : ''}</p>
         <span class="st big" style="background:var(--fg);color:var(--bg)">${esc(p.cat)}</span>
         <h2>${esc(p.title)}</h2>
         ${areaOf(p) ? `<p class="lead">${esc(areaOf(p))}</p>` : ''}
@@ -72,6 +73,7 @@ function draw() {
     ${slide}
     <button class="flip prev" aria-label="Zurück"></button><button class="flip next" aria-label="Weiter"></button>`;
   resolveImages(el);
+  el.querySelector('[data-plan-day]')?.addEventListener('click', (e) => { const d = e.currentTarget.dataset.planDay; close(); location.hash = '#/plan'; window.dispatchEvent(new CustomEvent('rb:goto-day', { detail: d })); });
   el.querySelector('.story-x').addEventListener('click', close);
   el.querySelector('.flip.prev').addEventListener('click', () => go(-1));
   el.querySelector('.flip.next').addEventListener('click', () => go(1));
@@ -104,12 +106,23 @@ document.addEventListener('touchend', (e) => {
   startY = null;
 }, { passive: true });
 
-export function storyRing(day, i) {
+// Gesehen-Status je Tag: ändert sich der Tag (andere Stopps), ist er wieder neu
+const seenKey = (day) => `rb.seen.${day}`;
+const dayHash = (day) => stopsOf(day).map((p) => p.id + (p.time || '')).join(',');
+const isSeen = (day) => { try { return localStorage.getItem(seenKey(day)) === dayHash(day); } catch { return false; } };
+export const markSeen = (day) => { try { localStorage.setItem(seenKey(day), dayHash(day)); } catch { /* egal */ } };
+
+export function storyRing(day) {
   const stops = stopsOf(day);
-  // Ring aus den Kategorie-Farben der Stopps des Tages
-  const cols = stops.length ? stops.map((p) => (CATS[p.cat] || CATS.Sehen).bg) : ['#E2DACB'];
+  const label = `${weekday(day).slice(0, 2)} ${dayNum(day)}.`;
+  if (!stops.length) {
+    return `<button class="ring ring-free" data-act="gotoDay" data-day="${day}" aria-label="${weekday(day)} planen">
+      <span class="ring-c"><span class="ring-in"><b>+</b></span></span><small>${label}</small></button>`;
+  }
+  const cols = stops.map((p) => (CATS[p.cat] || CATS.Sehen).bg);
   const seg = 360 / cols.length;
   const ring = `conic-gradient(${cols.map((c, k) => `${c} ${k * seg}deg ${(k + 1) * seg}deg`).join(', ')})`;
-  return `<button class="ring ${stops.length ? '' : 'empty'}" data-act="story" data-day="${day}" aria-label="${weekday(day)}, ${stops.length} Stopps">
-    <span class="ring-c" style="--ring:${ring}"><b>${dayNum(day)}</b></span><small>${weekday(day).slice(0, 2)}</small></button>`;
+  const cover = stops.find((p) => p.image) || stops[0];
+  return `<button class="ring ${isSeen(day) ? 'seen' : ''}" data-act="story" data-day="${day}" aria-label="${weekday(day)}, ${stops.length} Stopps ansehen">
+    <span class="ring-c" style="--ring:${ring}"><span class="ring-in">${photo(cover)}</span><i class="ring-n">${stops.length}</i></span><small>${label}</small></button>`;
 }

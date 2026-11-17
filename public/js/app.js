@@ -7,6 +7,7 @@ import { viewToday, viewIdeas, viewInfos, mountView } from './views.js';
 import { viewPlan, mountPlan } from './plan.js';
 import { themeFor, skylineSVG } from './themes.js';
 import { autoFill } from './images.js';
+import { maybeTour } from './tour.js';
 import './sheets.js';
 
 const app = document.getElementById('app');
@@ -238,6 +239,7 @@ async function boot() {
     const d = await refresh();
     rememberTrip(getToken(), d.trip);
     fillImagesLater();
+    showIntro();
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) {
       forgetToken(getToken());
@@ -251,6 +253,9 @@ async function boot() {
   }
 }
 
+// Mitmach-Tutorial beim ersten Öffnen (tour.js)
+function showIntro() { maybeTour(); }
+
 // Bilder für Orte im Hintergrund suchen (im Browser, siehe images.js)
 function fillImagesLater() {
   const missing = S.data.places.filter((p) => !p.image && !p.imageTried);
@@ -261,7 +266,7 @@ function fillImagesLater() {
 }
 
 // Regelmäßig auffrischen, solange die App sichtbar ist
-setInterval(() => { if (document.visibilityState === 'visible' && S.data && !sheetOpen() && document.getElementById('story').hidden) refresh().catch(() => {}); }, 30000);
+setInterval(() => { if (document.visibilityState === 'visible' && S.data && !sheetOpen() && document.getElementById('story').hidden && document.getElementById('tour').hidden) refresh().catch(() => {}); }, 30000);
 let loadedVersion = null;
 async function checkVersion() {
   try {
