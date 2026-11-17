@@ -97,11 +97,52 @@ export function openSheet(html, { onMount, onClose, tall = false } = {}) {
   document.addEventListener('keydown', onKey);
   sheetClose = () => { document.removeEventListener('keydown', onKey); onClose?.(); };
   requestAnimationFrame(() => sheet.classList.add('in'));
+  dragToClose(sheet, root.querySelector('.scrim'));
   onMount?.(sheet);
   const first = sheet.querySelector('[autofocus]');
   if (first && matchMedia('(hover: hover)').matches) first.focus();
   return sheet;
 }
+// Nach unten ziehen schließt das Sheet (nur wenn es ganz oben steht, sonst scrollt es normal)
+function dragToClose(sheet, scrim) {
+  let y0 = 0, t0 = 0, dy = 0, drag = false, armed = false;
+  const set = (y) => {
+    sheet.style.transform = y ? `translateY(${y}px)` : '';
+    if (scrim) scrim.style.opacity = y ? String(Math.max(0, 1 - y / (sheet.offsetHeight || 600))) : '';
+  };
+  sheet.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    y0 = e.touches[0].clientY; t0 = Date.now(); dy = 0; drag = false;
+    // Griff und Kopf ziehen immer, sonst nur ohne Scroll-Abstand
+    armed = sheet.scrollTop <= 0 || e.target.closest('.grab');
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (!armed) return;
+    dy = e.touches[0].clientY - y0;
+    if (!drag) {
+      if (dy > 8 && sheet.scrollTop <= 0) { drag = true; sheet.style.transition = 'none'; if (scrim) scrim.style.transition = 'none'; }
+      else if (dy < -4) { armed = false; return; }
+      else return;
+    }
+    e.preventDefault();
+    set(Math.max(0, dy - 8));
+  }, { passive: false });
+  const end = () => {
+    if (!drag) { armed = false; return; }
+    drag = false; armed = false;
+    sheet.style.transition = '';
+    if (scrim) scrim.style.transition = 'opacity .22s';
+    const fast = dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6;
+    if (dy > 110 || fast) {
+      sheet.style.transform = 'translateY(100%)';
+      if (scrim) scrim.style.opacity = '0';
+      setTimeout(closeSheet, 220);
+    } else set(0);
+  };
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
+}
+
 export function closeSheet() {
   const root = document.getElementById('sheet');
   if (!root || root.hidden) return;
