@@ -1,0 +1,42 @@
+// Abendbriefing: um briefing_hour (Ortszeit am Reiseziel) geht eine Push-Nachricht für den nächsten Tag raus.
+// Am Abend vor dem Abflug richtet sich die Uhrzeit nach der Heimat-Zeitzone.
+import { addDays, localParts } from './util.js';
+import { pushToTrip } from './push.js';
+
+export function briefingFor(trip, places, tomorrow) {
+  const ps = places.filter((p) => p.day === tomorrow && !p.deleted)
+    .sort((a, b) => (a.time || '99').localeCompare(b.time || '99') || a.ord - b.ord);
+  const isFirst = tomorrow === trip.start;
+  const isLast = tomorrow === trip.end;
+  const title = isFirst ? `Morgen geht es nach ${trip.dest || trip.name}` : isLast ? 'Morgen ist schon der letzte Tag' : 'Morgen auf dem Plan';
+  if (!ps.length) return { title, body: 'Für morgen steht noch nichts fest. In den Ideen liegt genug, oder ihr fragt den Reiseberater.' };
+  const first = ps[0];
+  const parts = ps.slice(0, 5).map((p) => `${p.time ? p.time + ' ' : ''}${p.title}`);
+  const more = ps.length > 5 ? ` und ${ps.length - 5} mehr` : '';
+  const booked = ps.filter((p) => p.booked).map((p) => p.title);
+  let body = parts.join(' · ') + more + '.';
+  if (booked.length) body += ` Gebucht: ${booked.join(', ')}.`;
+  if (first.time) body = `Start ${first.time}. ` + body;
+  return { title, body };
+}
+
+// Vom Cron jede Stunde aufgerufen
+export async function runBriefings(env, now = Date.now()) {
+  const { results: trips } = await env.DB.prepare('SELECT * FROM trips WHERE start IS NOT NULL AND end IS NOT NULL').all();
+  let sent = 0;
+  for (const trip of trips) {
+    const there = localParts(trip.tz, now);
+    const home = localParts(trip.home_tz, now);
+    // Abend vor dem Abflug: zu Hause; während der Reise: am Ziel
+    let local = null;
+    if (addDays(home.date, 1) === trip.start) local = home;
+    else if (there.date >= trip.start && there.date < trip.end) local = there;
+    if (!local || local.hour !== trip.briefing_hour || trip.last_briefing === local.date) continue;
+    const { results: places } = await env.DB.prepare('SELECT * FROM places WHERE trip_id = ? AND deleted = 0').bind(trip.id).all();
+    const msg = briefingFor(trip, places, addDays(local.date, 1));
+    const r = await pushToTrip(env, trip.id, { ...msg, tag: 'briefing', url: './#/heute' });
+    await env.DB.prepare('UPDATE trips SET last_briefing = ? WHERE id = ?').bind(local.date, trip.id).run();
+    sent += r.sent;
+  }
+  return { sent };
+}

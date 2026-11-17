@@ -1,0 +1,5 @@
+node_modules
+.wrangler
+.dev.vars
+# Echte Reisedaten (Namen, Hotel, Flüge) gehören nicht in das öffentliche Repo
+private/

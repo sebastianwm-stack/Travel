@@ -1,0 +1,12 @@
+{
+  "name": "reisebande",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --no-warnings dev-server.mjs",
+    "test": "node --no-warnings --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.164.0"
+  }
+}
