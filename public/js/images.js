@@ -32,25 +32,46 @@ async function getJSON(url, fetcher) {
   return res.json();
 }
 
-// Wikipedia: passender Artikel mit Titelbild
+// Deutsche Beschreibungen in englische Suchbegriffe übersetzen, Füllwörter weglassen
+const DE_EN = [
+  [/freiheitsstatue/gi, 'Statue of Liberty'], [/weihnachtsbeleuchtung|lichtershow/gi, 'Christmas lights'],
+  [/eisbahn/gi, 'rink'], [/aussichtsplattform/gi, 'observation deck'], [/weihnachtsmarkt/gi, 'Christmas market'],
+  [/(?<!\p{L})(zu fuß|zu fuss|wer möchte|bootstour zur|bootstour|führung|winterbummel|nachbarschaft|alternative|shopping|erster|abendspaziergang|ankommen)(?!\p{L})/giu, ' '],
+];
+export function searchTerms(title) {
+  let t = String(title).replace(/\(.*?\)/g, ' ');
+  for (const [re, en] of DE_EN) t = t.replace(re, en);
+  t = t.replace(/[:]/g, ' ').replace(/\s+/g, ' ').trim();
+  const parts = t.split(/\s+(?:und|&|and)\s+|,|\//i).map((x) => x.trim()).filter((x) => x.length > 2);
+  return { full: t, parts };
+}
+
+// Wikipedia: passender Artikel mit Titelbild (keine Logos)
 export async function fromWikipedia(place, dest, fetcher = fetch) {
-  const q = `${place.title.replace(/\(.*?\)/g, '')} ${dest || ''}`.trim();
-  const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages|coordinates&piprop=thumbnail&pithumbsize=900&colimit=5`;
-  const data = await getJSON(url, fetcher);
-  const pages = Object.values(data?.query?.pages || {}).filter((p) => p.thumbnail?.source).sort((a, b) => a.index - b.index);
-  let best = null, bestScore = 0;
-  for (const p of pages) {
-    const sim = similarity(place.title, p.title);
-    const c = p.coordinates?.[0];
-    const dist = c && Number.isFinite(place.lat) ? km(place, { lat: c.lat, lng: c.lon }) : null;
-    let score = 0;
-    if (sim >= 0.99) score = 3;
-    else if (sim >= 0.5 && (dist === null || dist < 5)) score = 2;
-    else if (sim >= 0.34 && dist !== null && dist < 1.5) score = 1.5;
-    if (score > bestScore) { best = p; bestScore = score; }
+  const { full, parts } = searchTerms(place.title);
+  if (!full) return null;
+  const queries = [...new Set([`${full} ${dest || ''}`.trim(), full, ...parts.slice(0, 2)])].slice(0, 3);
+  for (const q of queries) {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages|coordinates&piprop=thumbnail&pithumbsize=900&colimit=5`;
+    const data = await getJSON(url, fetcher);
+    const pages = Object.values(data?.query?.pages || {})
+      .filter((p) => p.thumbnail?.source && !/\.svg/i.test(p.thumbnail.source))
+      .sort((a, b) => a.index - b.index);
+    let best = null, bestScore = 0;
+    for (const p of pages) {
+      const sim = Math.max(similarity(full, p.title), ...parts.map((x) => similarity(x, p.title)));
+      const c = p.coordinates?.[0];
+      const dist = c && Number.isFinite(place.lat) ? km(place, { lat: c.lat, lng: c.lon }) : null;
+      if (dist !== null && dist > 25) continue; // anderer Ort gleichen Namens
+      let score = 0;
+      if (sim >= 0.99) score = 3;
+      else if (sim >= 0.5 && (dist === null || dist < 5)) score = 2;
+      else if (sim >= 0.34 && dist !== null && dist < 1.5) score = 1.5;
+      if (score > bestScore) { best = p; bestScore = score; }
+    }
+    if (best) return { url: best.thumbnail.source, credit: `Wikipedia: ${best.title}`, link: `https://en.wikipedia.org/?curid=${best.pageid}` };
   }
-  if (!best) return null;
-  return { url: best.thumbnail.source, credit: `Wikipedia: ${best.title}`, link: `https://en.wikipedia.org/?curid=${best.pageid}` };
+  return null;
 }
 
 // Commons: Fotos im Umkreis von 100 m, deren Dateiname zum Ort passt
@@ -59,7 +80,8 @@ export async function fromCommons(place, fetcher = fetch) {
   const url = `https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggscoord=${place.lat}|${place.lng}&ggsradius=100&ggsnamespace=6&ggslimit=20&prop=imageinfo&iiprop=url&iiurlwidth=900`;
   const data = await getJSON(url, fetcher);
   const files = Object.values(data?.query?.pages || {}).filter((f) => f.imageinfo?.[0]?.thumburl && /\.(jpe?g|png|webp)$/i.test(f.title));
-  const scored = files.map((f) => ({ f, s: similarity(place.title, f.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '')) })).filter((x) => x.s >= 0.5).sort((a, b) => b.s - a.s);
+  const name = searchTerms(place.title).full;
+  const scored = files.map((f) => ({ f, s: similarity(name, f.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '')) })).filter((x) => x.s >= 0.5).sort((a, b) => b.s - a.s);
   if (!scored.length) return null;
   const f = scored[0].f;
   return { url: f.imageinfo[0].thumburl, credit: 'Wikimedia Commons', link: f.imageinfo[0].descriptionurl || 'https://commons.wikimedia.org' };

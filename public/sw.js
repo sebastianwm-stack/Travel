@@ -1,7 +1,7 @@
 // Offline-Unterstützung: erst frisch aus dem Netz, im Funkloch aus dem Cache.
 // /api/ wird nie zwischengespeichert (den letzten Reisestand hält die App selbst im localStorage).
-const CACHE = 'reisebande-v1';
-const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/fonts/bricolage.woff2', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css'];
+const CACHE = 'reisebande-v2';
+const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -17,7 +17,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (req.method !== 'GET') return;
   // Kartenkacheln: aus dem Cache, wenn vorhanden (offline unterwegs)
-  if (url.hostname === 'tile.openstreetmap.org') {
+  if (url.hostname === 'tiles.openfreemap.org') {
     e.respondWith((async () => {
       const cache = await caches.open('tiles-v1');
       const hit = await cache.match(req);

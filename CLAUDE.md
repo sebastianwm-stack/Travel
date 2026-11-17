@@ -7,5 +7,5 @@
 - Tests: `npm test`. Lokal ansehen: `npm run dev` → http://localhost:8788 (`SEED=private/…json` für Testdaten).
 - Texte auf Deutsch, kurz und freundlich, keine KI-Floskeln, keine Gedankenstriche, gerade Anführungszeichen. Design: Sticker-Board (siehe Kopf von `public/style.css`), Farben der Ziele in `public/js/themes.js`.
 - Die App soll Spaß machen: Stories, Swipen, Karte. Keine Aufgaben- oder Packlisten wieder einbauen (ausdrücklicher Wunsch).
-- Bilder für Orte sucht der Browser (`public/js/images.js`, Wikipedia und Commons), weil Wikimedia gemeinsam genutzte Server-Adressen drosselt. Kartenkacheln: OpenStreetMap (CARTO verlangt inzwischen einen Schlüssel).
+- Bilder für Orte sucht der Browser (`public/js/images.js`, Wikipedia und Commons), weil Wikimedia gemeinsam genutzte Server-Adressen drosselt. Karte: MapLibre mit Vektorkacheln von OpenFreeMap, Stil in `public/js/mapstyle.js` (CARTO verlangt inzwischen einen Schlüssel).
 - Secret `VAPID_PRIVATE_JWK` liegt beim Worker, nicht im Repo.

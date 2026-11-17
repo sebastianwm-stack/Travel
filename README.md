@@ -8,7 +8,7 @@ Gestaltung: "Sticker-Board". Warmes Papier, eine kräftige Kopfzeile mit Skyline
 
 - **Heute:** Vor der Reise ein Countdown, die Tage als Stories, ein Stapel Ideen zum Swipen, die Lieblinge der Bande und was die anderen zuletzt eingetragen haben. Während der Reise der nächste Stopp und Nachrichten an alle, zum Beispiel ein Treffpunkt.
 - **Stories:** Jeder Tag ist eine Folge von Vollbild-Seiten, eine pro Stopp, in der Farbe der Kategorie. Tippen blättert weiter, nach unten wischen schließt.
-- **Plan:** Der Tag als Route auf der Karte (OpenStreetMap), darunter die Stopps als wischbare Karten. Die Karte folgt der Karte im Karussell. Ideen ohne Tag liegen blass im Hintergrund, damit man sieht, was in der Nähe ist. Wer lieber liest, schaltet auf Liste um. Mit **Vorschlag** verteilt die App Ideen ohne Tag so, dass nahe Orte am selben Tag landen und Ideen mit vielen Herzen zuerst drankommen; am Anreisetag beginnt der Vorschlag abends.
+- **Plan:** Der Tag als Route auf einer Vektorkarte (OpenFreeMap, flacher, bunter Stil in den App-Farben), darunter die Stopps als wischbare Karten. Die Karte folgt der Karte im Karussell. Ideen ohne Tag liegen blass im Hintergrund, damit man sieht, was in der Nähe ist. Wer lieber liest, schaltet auf Liste um. Mit **Vorschlag** verteilt die App Ideen ohne Tag so, dass nahe Orte am selben Tag landen und Ideen mit vielen Herzen zuerst drankommen; am Anreisetag beginnt der Vorschlag abends.
 - **Ideen swipen:** Nach rechts heißt will ich (Herz), nach links eher nicht. Wenn alle ein Herz vergeben haben, gibt es ein Match. Daneben die Ansicht **Alle** mit Suche und Kategorien.
 - **Neue Ideen:** per Google-Maps-Link (Teilen, Link kopieren, einfügen) oder per Name.
 - **Google-Maps-Liste:** Unter Ideen → Alle → Abgleichen liest die App eine geteilte Google-Maps-Liste und ergänzt neue Orte. Bestehende Orte bekommen genaue Koordinaten, gelöscht wird nichts. Google bietet dafür keine offizielle Schnittstelle. Die App liest die Liste so, wie Google Maps sie im Browser lädt, und das kann jederzeit brechen. Die Fehlermeldung sagt das dann. Einzelne Orte per Link gehen immer.
@@ -38,7 +38,7 @@ server/plan.js        Tagesvorschlag (Entfernungen, Herzen)
 server/ai.js          Reisebegleiter
 server/briefing.js    Abendbriefing per Cron
 server/push.js        Web Push (VAPID + Verschlüsselung nach RFC 8291)
-public/               die App ohne Build-Schritt (plan.js Karte, story.js Stories, swipe.js Swipen), Leaflet unter public/vendor/
+public/               die App ohne Build-Schritt (plan.js Karte, story.js Stories, swipe.js Swipen), MapLibre unter public/vendor/
 dev-server.mjs        lokaler Testserver (D1 über node:sqlite)
 tests/                npm test
 ```

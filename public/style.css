@@ -330,13 +330,13 @@ details.edit .form { margin-top: 10px; }
 .mini .ft { margin-top: 4px; }
 .mini.add { background: var(--bg); border: 2px dashed var(--line2); box-shadow: none; cursor: default; gap: 8px; }
 .mini.add b { font-size: 18px; }
-.pin span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 2.5px solid var(--ink); box-shadow: 0 2px 6px rgba(0,0,0,.3); font-weight: 800; font-size: 13px; font-family: Brico, system-ui; transition: transform .15s ease-out; }
-.pin.active span { transform: scale(1.35); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
-.pin.faint span { width: 14px; height: 14px; border-width: 2px; border-color: #fff; opacity: .75; margin: 8px; }
-/* OpenStreetMap etwas ruhiger, damit die Sticker-Pins vorne stehen */
-.leaflet-tile-pane { filter: saturate(0.5) brightness(1.03) contrast(0.95); }
-.leaflet-container { font-family: Brico, system-ui; }
-.leaflet-control-attribution { font-size: 10px; }
+.pin { background: none; border: 0; padding: 0; cursor: pointer; }
+.pin span { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 2.5px solid var(--ink); box-shadow: 2px 3px 0 var(--ink); font-weight: 800; font-size: 14px; font-family: Brico, system-ui; transition: transform .18s cubic-bezier(.3,1.6,.5,1); transform: rotate(-6deg); }
+.pin.active { z-index: 5; }
+.pin.active span { transform: scale(1.35) rotate(0deg); }
+.pin.faint span { width: 14px; height: 14px; border-width: 2px; border-color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.maplibregl-ctrl-attrib { font-size: 10px; }
+.maplibregl-map { font-family: Brico, system-ui; }
 
 /* ---------- Swipen ---------- */
 .top-r { display: flex; gap: 8px; align-items: center; }

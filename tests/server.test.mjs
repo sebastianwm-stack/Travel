@@ -166,3 +166,19 @@ test('Einladungen: einmal gültig, offene Plätze, getrennte Reisen', async () =
   const lena = await call('/trip', { token: a.data.token });
   assert.equal(lena.data.trip.name, 'NY');
 });
+
+test('Bildsuche: Suchbegriffe und Auswahl', async () => {
+  const { searchTerms, fromWikipedia, similarity } = await import('../public/js/images.js');
+  assert.equal(searchTerms('Brooklyn Bridge zu Fuß').full, 'Brooklyn Bridge');
+  assert.deepEqual(searchTerms('One World Trade Center und 9/11 Memorial').parts, ['One World Trade Center', '9', '11 Memorial'].filter((x) => x.length > 2));
+  assert.equal(searchTerms('Bootstour zur Freiheitsstatue').full, 'Statue of Liberty');
+  assert.ok(similarity('High Line', 'High Line') === 1);
+  // Gefälschte Wikipedia-Antwort: Logo wird übersprungen, passender Artikel genommen
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ query: { pages: {
+    1: { pageid: 1, index: 1, title: 'MoMA PS1', thumbnail: { source: 'https://x/logo.svg/960px-logo.svg.png' } },
+    2: { pageid: 2, index: 2, title: 'Museum of Modern Art', thumbnail: { source: 'https://x/moma.jpg' }, coordinates: [{ lat: 40.7614, lon: -73.9776 }] },
+    3: { pageid: 3, index: 3, title: 'High Line', thumbnail: { source: 'https://x/hl.jpg' } },
+  } } }) });
+  const r = await fromWikipedia({ title: 'High Line', lat: 40.748, lng: -74.0048 }, 'New York', fake);
+  assert.equal(r.url, 'https://x/hl.jpg');
+});

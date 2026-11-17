@@ -4,7 +4,7 @@ import { esc, ICON, fmtLong, toast, openSheet, weekday, dayNum, monthName } from
 import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf } from './state.js';
 import { dayChips, stopCard, sticker, avatars, empty, register, routeUrl, areaOf, photo } from './components.js';
 import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
-import { loadLeaflet, baseMap, pin, hasCoords } from './map.js';
+import { loadMapLib, baseMap, addPin, addRoute, hasCoords } from './map.js';
 
 export const planUi = { day: null, mode: 'karte' };
 let map = null;
@@ -62,45 +62,42 @@ export function viewPlan() {
 }
 
 export async function mountPlan(root) {
-  if (planUi.mode !== 'karte') { return; }
+  if (planUi.mode !== 'karte') return;
   const el = root.querySelector('#map');
   if (!el) return;
-  let L;
-  try { L = await loadLeaflet(); } catch (e) { el.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
+  let ml;
+  try { ml = await loadMapLib(); } catch (e) { el.innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
   if (!el.isConnected) return;
   if (map) { map.remove(); map = null; }
-  map = baseMap(L, el);
+  map = baseMap(ml, el);
   const d = planUi.day;
-  const stops = stopsOf(d).filter(hasCoords);
   const all = stopsOf(d);
+  const stops = all.filter(hasCoords);
   const markers = new Map();
   // Ideen ohne Tag blass im Hintergrund, damit man sieht, was in der Nähe liegt
-  for (const p of pool().filter(hasCoords)) {
-    const m = L.marker([p.lat, p.lng], { icon: pin(L, p, '', { faint: true }), title: p.title, keyboard: false }).addTo(map);
-    m.on('click', () => openPlace(p.id));
-  }
+  for (const p of pool().filter(hasCoords)) addPin(ml, map, p, '', { faint: true, onClick: () => openPlace(p.id) });
   stops.forEach((p) => {
     const i = all.indexOf(p);
-    const m = L.marker([p.lat, p.lng], { icon: pin(L, p, String(i + 1)), title: p.title, zIndexOffset: 1000 }).addTo(map);
-    m.on('click', () => scrollToCard(i));
-    markers.set(i, { m, p });
+    markers.set(i, { m: addPin(ml, map, p, String(i + 1), { onClick: () => scrollToCard(i) }), p });
   });
-  if (stops.length > 1) L.polyline(stops.map((p) => [p.lat, p.lng]), { color: '#161616', weight: 4, opacity: 0.8, dashArray: '1 9', lineCap: 'round' }).addTo(map);
+  if (stops.length > 1) addRoute(map, stops);
   const fitTo = stops.length ? stops : pool().filter(hasCoords);
   const bottomPad = root.querySelector('.carousel-wrap')?.offsetHeight || 200;
-  if (fitTo.length) map.fitBounds(L.latLngBounds(fitTo.map((p) => [p.lat, p.lng])), { paddingTopLeft: [30, 150], paddingBottomRight: [30, bottomPad + 20], maxZoom: 15 });
-  else map.setView([48.5, 10], 4);
+  if (fitTo.length) {
+    const b = new ml.LngLatBounds();
+    fitTo.forEach((p) => b.extend([p.lng, p.lat]));
+    map.fitBounds(b, { padding: { top: 160, bottom: bottomPad + 24, left: 40, right: 40 }, maxZoom: 15, duration: 0 });
+  }
 
   // Karte folgt der Karte im Karussell
   const car = root.querySelector('[data-carousel]');
   let active = -1;
   const setActive = (i) => {
     if (i === active) return;
-    const prev = markers.get(active);
-    if (prev) prev.m.setIcon(pin(L, prev.p, String(active + 1)));
+    markers.get(active)?.m.getElement().classList.remove('active');
     active = i;
     const cur = markers.get(i);
-    if (cur) { cur.m.setIcon(pin(L, cur.p, String(i + 1), { active: true })); map.panTo([cur.p.lat, cur.p.lng], { animate: true }); }
+    if (cur) { cur.m.getElement().classList.add('active'); map.easeTo({ center: [cur.p.lng, cur.p.lat], duration: 500 }); }
     car.querySelectorAll('.mini').forEach((c) => c.classList.toggle('on', Number(c.dataset.i) === i));
   };
   let raf;

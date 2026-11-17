@@ -1,41 +1,53 @@
-// Leaflet (lokal unter vendor/) mit den Standard-Kacheln von OpenStreetMap (ohne Schlüssel, mit Namensnennung).
+// Karte mit MapLibre (lokal unter vendor/) und Vektorkacheln von OpenFreeMap, ohne Schlüssel.
+// Der Stil steht in mapstyle.js. Pins sind HTML-Sticker, die Route eine gepunktete Linie.
 import { CATS } from './themes.js';
+import { MAP_STYLE } from './mapstyle.js';
 
-let leafletReady = null;
-export function loadLeaflet() {
-  if (!leafletReady) {
-    leafletReady = new Promise((res, rej) => {
+let ready = null;
+export function loadMapLib() {
+  if (!ready) {
+    ready = new Promise((res, rej) => {
       const css = document.createElement('link');
-      css.rel = 'stylesheet'; css.href = '/vendor/leaflet/leaflet.css';
+      css.rel = 'stylesheet'; css.href = '/vendor/maplibre/maplibre-gl.css';
       document.head.appendChild(css);
       const s = document.createElement('script');
-      s.src = '/vendor/leaflet/leaflet.js';
-      s.onload = () => res(window.L);
-      s.onerror = () => { leafletReady = null; rej(new Error('Die Karte konnte nicht geladen werden.')); };
+      s.src = '/vendor/maplibre/maplibre-gl-csp.js';
+      s.onload = () => { window.maplibregl.setWorkerUrl('/vendor/maplibre/maplibre-gl-csp-worker.js'); res(window.maplibregl); };
+      s.onerror = () => { ready = null; rej(new Error('Die Karte konnte nicht geladen werden.')); };
       document.head.appendChild(s);
     });
   }
-  return leafletReady;
+  return ready;
 }
 
-export function baseMap(L, el) {
-  const map = L.map(el, { zoomControl: false, attributionControl: true });
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    // OpenStreetMap verlangt einen Referer (nur die Adresse der App, ohne Pfad)
-    referrerPolicy: 'strict-origin-when-cross-origin',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
+export function baseMap(ml, el, { center = [10, 48.5], zoom = 3 } = {}) {
+  const map = new ml.Map({
+    container: el, style: MAP_STYLE, center, zoom, pitch: 0, maxPitch: 0,
+    attributionControl: { compact: true, customAttribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>' },
+    dragRotate: false, pitchWithRotate: false, touchPitch: false,
+  });
+  map.touchZoomRotate.disableRotation();
   return map;
 }
 
-export function pin(L, p, label = '', { active = false, faint = false } = {}) {
+export function addPin(ml, map, p, label = '', { faint = false, onClick } = {}) {
   const c = CATS[p.cat] || CATS.Sehen;
-  return L.divIcon({
-    className: `pin${active ? ' active' : ''}${faint ? ' faint' : ''}`,
-    html: `<span style="background:${c.bg};color:${c.fg}">${label}</span>`,
-    iconSize: [30, 30], iconAnchor: [15, 15],
-  });
+  const el = document.createElement('button');
+  el.className = `pin${faint ? ' faint' : ''}`;
+  el.type = 'button';
+  el.setAttribute('aria-label', p.title);
+  el.innerHTML = `<span style="background:${c.bg};color:${c.fg}">${label}</span>`;
+  if (onClick) el.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+  return new ml.Marker({ element: el, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(map);
+}
+
+export function addRoute(map, points) {
+  const add = () => {
+    if (map.getSource('route')) return;
+    map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: points.map((p) => [p.lng, p.lat]) } } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#161616', 'line-width': 4, 'line-dasharray': [0.1, 2] } });
+  };
+  if (map.isStyleLoaded()) add(); else map.once('load', add);
 }
 
 export const hasCoords = (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng);
