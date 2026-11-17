@@ -109,15 +109,20 @@ function ensureRouter() {
 }
 const WALK_IC = I('<circle cx="13" cy="4" r="2"/><path d="m9 21 2-6 3 3v3M10 12l1-4 3 2 3 1M11 8l-3 2-1 4"/>');
 const TRAIN_IC = I('<rect x="5" y="3" width="14" height="14" rx="4"/><path d="M5 11h14M8 21l2-4M16 21l-2-4"/><circle cx="9" cy="14" r=".6"/><circle cx="15" cy="14" r=".6"/>');
+// Weg zwischen zwei Stopps: empfohlene Art zuerst, bei Wegen bis 35 Min. zu Fuß auch die andere Möglichkeit
 function leg(a, b, d, sug = false) {
   if (!router.r || !a || !b || !hasCoords(a) || !hasCoords(b)) return '';
   const r = router.r.trip(a, b, { date: d });
   if (!r) return '';
-  const walk = r.mode === 'walk';
-  const url = `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${walk ? 'walking' : 'transit'}`;
-  const what = walk ? `${r.min} Min. zu Fuß`
-    : `${r.min} Min. ${r.lines.map((l) => `<i class="ln" style="background:${l.color};color:${l.text}">${esc(l.name)}</i>`).join('')}<small>ab ${esc(r.from)}</small>`;
-  return `<a class="leg ${sug ? 'sug' : ''} ${r.min >= 45 ? 'long' : ''}" href="${url}" target="_blank" rel="noopener" data-stop aria-label="Weg: ${walk ? `${r.min} Minuten zu Fuß` : `${r.min} Minuten mit Linie ${r.lines.map((l) => l.name).join(', ')}`}">${walk ? WALK_IC : TRAIN_IC}<span>${what}</span></a>`;
+  const url = (mode) => `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=${mode}`;
+  const walkOpt = r.walk ? `<a class="leg-o" href="${url('walking')}" target="_blank" rel="noopener" data-stop aria-label="${r.walk.min} Minuten zu Fuß">${WALK_IC}<span>${r.walk.min} Min. zu Fuß</span></a>` : '';
+  const t = r.transit;
+  const trainOpt = t ? `<a class="leg-o" href="${url('transit')}" target="_blank" rel="noopener" data-stop aria-label="${t.min} Minuten mit Linie ${t.lines.map((l) => l.name).join(', ')} ab ${esc(t.from)}">${TRAIN_IC}<span>${t.min} Min. ${t.lines.map((l) => `<i class="ln" style="background:${l.color};color:${l.text}">${esc(l.name)}</i>`).join('')}${r.mode === 'transit' ? `<small>ab ${esc(t.from)}</small>` : ''}</span></a>` : '';
+  // die andere Möglichkeit nur, wenn sie eine echte Wahl ist (Bahn kaum langsamer, Laufweg nicht zu lang)
+  const showOther = r.mode === 'walk' ? t && r.walk.min >= 10 && t.min <= r.walk.min + 5 : r.walk && r.walk.min <= 35;
+  const first = r.mode === 'walk' ? walkOpt : trainOpt;
+  const other = showOther ? (r.mode === 'walk' ? trainOpt : walkOpt) : '';
+  return `<div class="leg ${sug ? 'to-sug' : ''} ${r.min >= 45 ? 'long' : ''}">${first}${other ? `<span class="leg-alt"><em>oder</em>${other}</span>` : ''}</div>`;
 }
 
 function rowCard(p) {

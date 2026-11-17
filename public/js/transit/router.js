@@ -123,11 +123,13 @@ export function makeRouter(net) {
   // Wochentag des Datums → 0 werktags, 1 samstags, 2 sonntags
   const svcOf = (date) => { if (!date) return 0; const d = new Date(date + 'T12:00:00Z').getUTCDay(); return d === 6 ? 1 : d === 0 ? 2 : 0; };
 
-  // Fahrt von a nach b: { min, mode: 'walk'|'transit', lines: [{name,color,text}], walkMin, from, to }
+  // Fahrt von a nach b: { min, mode: 'walk'|'transit', lines: [{name,color,text}], from, to, walk: {min}, transit: {...} }
+  // walk und transit sind die beiden Möglichkeiten (transit fehlt bei sehr kurzen Wegen), min/mode die empfohlene.
   function trip(a, b, { date } = {}) {
     if (!a || !b || !Number.isFinite(a.lat) || !Number.isFinite(b.lat)) return null;
     const direct = km(a, b);
-    const walk = { min: Math.max(1, Math.round(walkSec(direct) / 60)), mode: 'walk', lines: [], walkMin: Math.round(walkSec(direct) / 60) };
+    const wm = Math.max(1, Math.round(walkSec(direct) / 60));
+    const walk = { min: wm, mode: 'walk', lines: [], walkMin: wm, walk: { min: wm } };
     if (direct < 0.6 || !covers(a) || !covers(b)) return covers(a) && covers(b) ? walk : (direct < 1.5 ? walk : null);
     const { dist, prev } = from(a, svcOf(date));
     let best = Infinity, bestNode = -1;
@@ -135,13 +137,14 @@ export function makeRouter(net) {
       for (const n of atStation[s]) { const c = dist[n] + walkSec(k) + EXIT_SEC; if (c < best) { best = c; bestNode = n; } }
     }
     if (bestNode < 0 || !Number.isFinite(best)) return direct < 2.5 ? walk : null;
-    // Laufen, wenn es nicht deutlich länger dauert
-    if (walk.min * 60 <= best + 240) return walk;
     const lines = []; const path = [];
     for (let n = bestNode; n >= 0; n = prev[n]) path.push(n);
     path.reverse();
     for (const n of path) { const r = routes[nodeR[n]]; if (lines[lines.length - 1]?.name !== r.name) lines.push({ name: r.name, color: r.color, text: r.text }); }
-    return { min: Math.round(best / 60), mode: 'transit', lines, from: st[nodeSt[path[0]]].name, to: st[nodeSt[bestNode]].name };
+    const transit = { min: Math.round(best / 60), mode: 'transit', lines, from: st[nodeSt[path[0]]].name, to: st[nodeSt[bestNode]].name };
+    // Beide Möglichkeiten mitgeben; gewählt wird Laufen, wenn es nicht deutlich länger dauert
+    const choice = walk.min * 60 <= best + 240 ? walk : transit;
+    return { ...choice, walkMin: walk.min, walk: { min: walk.min }, transit };
   }
 
   return { covers, trip, name: net.name };
