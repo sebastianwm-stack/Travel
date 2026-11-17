@@ -284,7 +284,14 @@ register({
   delItem: async (el) => { if (!confirm('Eintrag entfernen?')) return; try { await mutate(`/items/${el.dataset.id}`, { method: 'DELETE' }); } catch (err) { toast(err.message); } },
   pushOn: async () => { try { await enablePush(); window.dispatchEvent(new Event('rb:render')); toast('Benachrichtigungen sind an'); } catch (e) { toast(e.message, 5000); } },
   pushOff: async () => { await disablePush(); window.dispatchEvent(new Event('rb:render')); },
-  testPush: async () => { try { const r = await testPush(); toast(r.ok ? 'Ist unterwegs' : 'Es kam keine Benachrichtigung an'); } catch (e) { toast(e.message); } },
+  testPush: async () => {
+    try {
+      const r = await testPush();
+      if (r.ok) toast('Ist unterwegs');
+      else if (!r.devices) toast('Dieses Gerät ist nicht angemeldet. Bitte Benachrichtigungen aus- und wieder einschalten.', 5000);
+      else toast(`Nicht angekommen (${r.results?.[0]?.status || '?'} ${r.results?.[0]?.detail || ''}). Bitte aus- und wieder einschalten.`, 6000);
+    } catch (e) { toast(e.message); }
+  },
 });
 
 // Ideen auswählen und auf einen Tag legen

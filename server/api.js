@@ -6,7 +6,7 @@ import { suggestPlan, draftPlan, SLOTS } from './plan.js';
 import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
-import { validEndpoint, pushReady, pushToTrip, sendPush } from './push.js';
+import { validEndpoint, pushReady, pushToTrip, sendPushVerbose } from './push.js';
 
 const COLORS = ['#C8F25A', '#FF8AD1', '#FF5B3A', '#2F4BFF', '#7A4DFF', '#0E6B47', '#FFB627', '#16B5C9'];
 const MAX_FILE = 20 * 1024 * 1024;
@@ -494,9 +494,10 @@ export async function handleApi(request, env, url) {
     const { results } = await env.DB.prepare('SELECT * FROM push_subs WHERE member_id = ?').bind(me.id).all();
     const s = await loadState(env, trip);
     const msg = briefingFor(trip, s.places, nextBriefingDay(trip));
-    let ok = 0;
-    for (const sub of results) if ((await sendPush(env, sub, { ...msg, tag: 'briefing', url: './#/heute' }).catch(() => 0)) < 300) ok++;
-    return json({ ok: ok > 0, sent: ok });
+    const out = [];
+    for (const sub of results) out.push(await sendPushVerbose(env, sub, { ...msg, tag: 'briefing', url: '/#/heute' }));
+    const ok = out.filter((r) => r.status >= 200 && r.status < 300).length;
+    return json({ ok: ok > 0, sent: ok, devices: results.length, results: out });
   }
   if (path === '/briefing' && method === 'GET') {
     const s = await loadState(env, trip);

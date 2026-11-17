@@ -18,7 +18,7 @@
   // Öffentlicher Schlüssel für Web Push. Der private liegt als Secret VAPID_PRIVATE_JWK bei Cloudflare.
   "vars": {
     "VAPID_PUBLIC": "BKvPbLCZaHrEWYVXaP_fzdMhjHHE4vrEz4saJGVbJXCDZtJen0dd3tp9NY4fnsXtKv8FqrC8K7TwzIa3ysQrnzc",
-    "VAPID_SUBJECT": "mailto:reisebande@example.invalid"
+    "VAPID_SUBJECT": "https://reisebande.pages.dev"
   },
   // Jede Stunde prüfen, ob das Abendbriefing fällig ist
   "triggers": { "crons": ["7 * * * *"] },

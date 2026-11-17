@@ -24,7 +24,7 @@ async function vapidKey(env) {
 
 export async function vapidJWT(env, audience, now = Date.now()) {
   const enc = (o) => b64uEncode(new TextEncoder().encode(JSON.stringify(o)));
-  const unsigned = `${enc({ typ: 'JWT', alg: 'ES256' })}.${enc({ aud: audience, exp: Math.floor(now / 1000) + 12 * 3600, sub: env.VAPID_SUBJECT || 'mailto:reise@example.invalid' })}`;
+  const unsigned = `${enc({ typ: 'JWT', alg: 'ES256' })}.${enc({ aud: audience, exp: Math.floor(now / 1000) + 12 * 3600, sub: env.VAPID_SUBJECT || 'https://reisebande.pages.dev' })}`;
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, await vapidKey(env), new TextEncoder().encode(unsigned));
   return `${unsigned}.${b64uEncode(sig)}`;
 }
@@ -83,7 +83,24 @@ export async function sendPush(env, sub, message) {
     },
     body,
   });
+  if (res.status >= 300) console.error('push', res.status, await res.text().catch(() => ''));
   return res.status;
+}
+
+// Wie sendPush, gibt aber Apples bzw. Googles Antwort mit zurück (für den Test-Knopf)
+export async function sendPushVerbose(env, sub, message) {
+  try {
+    const body = await encryptPayload(sub, JSON.stringify(message));
+    const jwt = await vapidJWT(env, new URL(sub.endpoint).origin);
+    const res = await fetch(sub.endpoint, {
+      method: 'POST',
+      headers: { authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC}`, 'content-encoding': 'aes128gcm', 'content-type': 'application/octet-stream', ttl: '43200', urgency: 'normal' },
+      body,
+    });
+    return { status: res.status, detail: res.status >= 300 ? (await res.text().catch(() => '')).slice(0, 200) : '' };
+  } catch (e) {
+    return { status: 0, detail: String(e?.message || e).slice(0, 200) };
+  }
 }
 
 // An alle Abos einer Reise senden; tote Abos werden entfernt
