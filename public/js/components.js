@@ -68,9 +68,10 @@ export function mapsUrl(p) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.title} ${p.area || ''} ${trip().dest || ''}`.trim())}`;
 }
 
+// Route vom aktuellen Standort, gleich mit Bus und Bahn (sonst zeigt Maps oft zuerst das Auto)
 export function routeUrl(p) {
-  if (Number.isFinite(p.lat) && !p.approx) return `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${p.title} ${p.area || ''} ${trip().dest || ''}`.trim())}`;
+  const dest = Number.isFinite(p.lat) && !p.approx ? `${p.lat},${p.lng}` : encodeURIComponent(`${p.title} ${p.area || ''} ${trip().dest || ''}`.trim());
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=transit`;
 }
 
 export function stopCard(p, { walkAfter = '' } = {}) {
