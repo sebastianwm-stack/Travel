@@ -181,6 +181,8 @@ test('Bildsuche: Suchbegriffe und Auswahl', async () => {
   } } }) });
   const r = await fromWikipedia({ title: 'High Line', lat: 40.748, lng: -74.0048 }, 'New York', fake);
   assert.equal(r.url, 'https://x/hl.jpg');
+  // Zu allgemein: kein Bild statt irgendeines Hotels
+  assert.equal(await fromWikipedia({ title: 'Ankommen, Hotel, erster Abendspaziergang' }, 'New York', fake), null);
 });
 
 test('Schema lässt sich mehrfach ausführen (neue Isolates)', async () => {

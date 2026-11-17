@@ -47,9 +47,14 @@ export function searchTerms(title) {
 }
 
 // Wikipedia: passender Artikel mit Titelbild (keine Logos)
+// Allein zu allgemein, um ein passendes Bild zu finden ("Hotel" ergäbe irgendein Hotel)
+const GENERIC = new Set(['hotel', 'park', 'museum', 'market', 'bar', 'restaurant', 'cafe', 'shop', 'store', 'bridge', 'street', 'tour', 'pizza', 'burger', 'bagels', 'tacos', 'ramen']);
+const tooGeneric = (t) => { const w = words(t); return !w.length || (w.length === 1 && GENERIC.has(w[0])); };
+
 export async function fromWikipedia(place, dest, fetcher = fetch) {
-  const { full, parts } = searchTerms(place.title);
-  if (!full) return null;
+  const { full } = searchTerms(place.title);
+  if (!full || tooGeneric(full)) return null;
+  const parts = searchTerms(place.title).parts.filter((x) => !tooGeneric(x));
   const queries = [...new Set([`${full} ${dest || ''}`.trim(), full, ...parts.slice(0, 2)])].slice(0, 3);
   for (const q of queries) {
     const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages|coordinates&piprop=thumbnail&pithumbsize=900&colimit=5`;
@@ -81,6 +86,7 @@ export async function fromCommons(place, fetcher = fetch) {
   const data = await getJSON(url, fetcher);
   const files = Object.values(data?.query?.pages || {}).filter((f) => f.imageinfo?.[0]?.thumburl && /\.(jpe?g|png|webp)$/i.test(f.title));
   const name = searchTerms(place.title).full;
+  if (tooGeneric(name)) return null;
   const scored = files.map((f) => ({ f, s: similarity(name, f.title.replace(/^File:/, '').replace(/\.[a-z]+$/i, '')) })).filter((x) => x.s >= 0.5).sort((a, b) => b.s - a.s);
   if (!scored.length) return null;
   const f = scored[0].f;
