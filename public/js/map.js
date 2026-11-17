@@ -36,16 +36,17 @@ export function addPin(ml, map, p, label = '', { faint = false, onClick } = {}) 
   el.className = `pin${faint ? ' faint' : ''}`;
   el.type = 'button';
   el.setAttribute('aria-label', p.title);
-  el.innerHTML = `<span style="background:${c.bg};color:${c.fg}">${label}</span>`;
+  el.innerHTML = faint ? `<span style="background:${c.bg}"></span>` : `<span class="drop" style="--c:${c.bg};--t:${c.fg}"><b>${label}</b></span>`;
   if (onClick) el.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  return new ml.Marker({ element: el, anchor: 'center' }).setLngLat([p.lng, p.lat]).addTo(map);
+  return new ml.Marker({ element: el, anchor: faint ? 'center' : 'bottom' }).setLngLat([p.lng, p.lat]).addTo(map);
 }
 
 export function addRoute(map, points) {
   const add = () => {
     if (map.getSource('route')) return;
     map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: points.map((p) => [p.lng, p.lat]) } } });
-    map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#161616', 'line-width': 4, 'line-dasharray': [0.1, 2] } });
+    map.addLayer({ id: 'route-halo', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 8 } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#E8553A', 'line-width': 4 } });
   };
   if (map.isStyleLoaded()) add(); else map.once('load', add);
 }
