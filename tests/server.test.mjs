@@ -239,3 +239,22 @@ test('Tagesgerüst: Vorschläge passen zum Abschnitt, belegte Abschnitte bleiben
   const picks = Object.values(d).flatMap((x) => Object.values(x).map((e) => e.pick));
   assert.equal(new Set(picks).size, picks.length, 'kein Ort doppelt vorgeschlagen');
 });
+
+test('Tagesgerüst: Abreisetag bleibt nah an der Unterkunft, Abschnitte folgen der Route', async () => {
+  const { draftPlan, km } = await import('../server/plan.js');
+  const home = { lat: 40.711, lng: -74.010 };
+  const P = (id, cat, lat, lng, hearts = 0) => ({ id, title: id, cat, lat, lng, hearts });
+  const places = [
+    P('cafe-nah', 'Café', 40.713, -74.008), P('cafe-weit', 'Café', 40.760, -73.980, 2),
+    P('sehen-a', 'Sehen', 40.720, -74.000), P('essen-a', 'Essen', 40.721, -73.999), P('sehen-b', 'Sehen', 40.722, -73.998),
+    P('essen-weit', 'Essen', 40.735, -73.990),
+  ];
+  const days = ['2026-12-18', '2026-12-19'];
+  const d = draftPlan(places, days, { start: '2026-12-18', end: '2026-12-19', home });
+  const leave = d['2026-12-19'];
+  assert.equal(leave.frueh?.pick, 'cafe-nah', 'Frühstück am Abreisetag in Hotelnähe, trotz mehr Herzen weiter weg');
+  for (const e of Object.values(leave)) {
+    const p = places.find((x) => x.id === e.pick);
+    assert.ok(km(home, p) < 2.5, `${p.id} zu weit weg für den Abreisetag`);
+  }
+});

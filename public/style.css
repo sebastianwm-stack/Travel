@@ -501,6 +501,17 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 .tour-sug { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 2px dashed var(--line2); border-radius: 12px; padding: 10px; }
 .tour-sug span { flex-basis: 100%; font-weight: 700; color: var(--tomato); font-size: 13px; }
 .tour .btn.big { margin-top: auto; }
+.tour-hero.small { height: 170px; }
+.tour-appicon { position: absolute; z-index: 2; left: 50%; top: 40px; width: 76px; height: 76px; margin-left: -38px; border-radius: 18px; border: 3px solid #fff; outline: 2.5px solid var(--ink); box-shadow: 5px 5px 0 var(--ink); transform: rotate(-5deg); }
+.install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.install-steps li { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1.5px solid var(--line); border-radius: 16px; padding: 12px 14px; font-size: 15px; line-height: 1.4; }
+.install-steps i { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--bg); border: 1.5px solid var(--line2); display: grid; place-items: center; color: var(--cobalt); }
+.install-steps i svg { width: 22px; height: 22px; }
+.install-steps i img { width: 40px; height: 40px; border-radius: 12px; }
+.tour-push { display: grid; gap: 10px; background: var(--card); border: 1.5px solid var(--line); border-radius: 16px; padding: 14px; }
+.tour-push p { font-size: 15px; line-height: 1.4; }
+.tour-push .btn { justify-self: start; }
+.tour-push svg { width: 18px; height: 18px; vertical-align: -3px; }
 
 /* Unterkunft */
 .home-pin { display: grid; justify-items: center; gap: 2px; pointer-events: none; }

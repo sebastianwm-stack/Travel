@@ -6,6 +6,8 @@ import { photo, resolveImages, areaOf, actions } from './components.js';
 import { themeFor, skylineSVG, CATS } from './themes.js';
 import { deck } from './swipe.js';
 import { storyRing } from './story.js';
+import { pushState, enablePush } from './push.js';
+import { toast } from './ui.js';
 
 const KEY = 'rb.tour';
 let step = 0;
@@ -17,7 +19,8 @@ export function maybeTour() {
 }
 export function start() {
   el = document.getElementById('tour');
-  step = 0;
+  // Im Browser auf dem Handy zuerst: auf den Home-Bildschirm legen
+  step = needsInstall() ? -1 : 0;
   el.hidden = false;
   document.body.classList.add('locked');
   draw();
@@ -32,13 +35,34 @@ function finish(goSwipe) {
 }
 const next = () => { step++; draw(); };
 
+const IOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function needsInstall() {
+  return !standalone() && (IOS() || /Android/.test(navigator.userAgent));
+}
+const SHARE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M7 10H5v11h14V10h-2"/></svg>';
+const ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+
 function draw() {
   const t = trip();
   const th = themeFor(t);
   const others = S.data.members.filter((m) => m.id !== me().id);
-  const dots = [0, 1, 2, 3, 4].map((i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('');
+  const dots = step < 0 ? '' : [0, 1, 2, 3, 4].map((i) => `<i class="${i === step ? 'on' : ''}"></i>`).join('');
   let body = '';
-  if (step === 0) {
+  if (step === -1) {
+    const ios = IOS();
+    body = `<div class="tour-hero small" style="--hero:${th.hero};--hero-ink:${th.ink};--orb:${th.orb}"><div class="orb"></div>${skylineSVG(th)}<img class="tour-appicon" src="/icons/icon-192.png" alt=""></div>
+      <div class="tour-txt"><h2>Erst mal aufs Handy</h2>
+      <p>Leg Reisebande auf deinen Home-Bildschirm. Dann öffnet sie sich wie eine richtige App und kann dir Bescheid geben, wenn die anderen etwas planen.</p></div>
+      <ol class="install-steps">${ios
+        ? `<li><i>${SHARE}</i><span>In Safari auf <b>Teilen</b> tippen. Je nach Ansicht steckt es hinter den drei Punkten.</span></li>
+           <li><i>${ADD}</i><span><b>Zum Home-Bildschirm</b> wählen, dann <b>Hinzufügen</b>.</span></li>
+           <li><i><img src="/icons/icon-192.png" alt=""></i><span>Reisebande auf dem Home-Bildschirm öffnen. Dein Zugang ist schon drin.</span></li>`
+        : `<li><i>${ICON.plus}</i><span>Im Browser-Menü (drei Punkte) <b>Zum Startbildschirm hinzufügen</b> oder <b>App installieren</b> wählen.</span></li>
+           <li><i><img src="/icons/icon-192.png" alt=""></i><span>Reisebande auf dem Startbildschirm öffnen. Dein Zugang ist schon drin.</span></li>`}</ol>
+      ${ios ? '<p class="hint">Ging der Link in WhatsApp oder Instagram auf? Dann erst oben auf "In Safari öffnen" tippen.</p>' : ''}
+      <button class="btn ghost wide" data-next>Später, erst mal reinschauen</button>`;
+  } else if (step === 0) {
     body = `<div class="tour-hero" style="--hero:${th.hero};--hero-ink:${th.ink};--orb:${th.orb}"><div class="orb"></div>${skylineSVG(th)}</div>
       <div class="tour-txt"><h2>Hallo ${esc(me().name)}!</h2>
       <p>Hier plant ihr ${esc(t.name)}${others.length ? ` zusammen: du, ${others.map((m) => esc(m.name)).join(', ')}` : ''}. Vier Dinge, dann geht es los.</p>
@@ -70,12 +94,19 @@ function draw() {
   } else {
     body = `<div class="tour-txt"><small>4 von 4</small><h2>Und sonst?</h2>
       <p>Im Plan hat jeder Tag Notizen, jeder Ort Notizen und Fotos. Und unten am Bildschirm hilft der Reiseberater, wenn du nicht weiterweißt.</p></div>
+      ${pushState() === 'off' ? `<div class="tour-push"><p><b>Benachrichtigungen?</b> Dann erfährst du, wenn jemand eine Notiz schreibt, und bekommst abends den Plan für morgen.</p><button class="btn" data-push>${ICON.bell}Einschalten</button></div>` : ''}
       <button class="btn primary big" data-go>Los, Ideen swipen</button><button class="btn ghost wide" data-done>Erst mal umschauen</button>`;
   }
   el.innerHTML = `<div class="tour-in"><div class="tour-top"><span class="tour-dots">${dots}</span><button class="link" data-done>Überspringen</button></div>${body}</div>`;
   resolveImages(el);
   el.querySelectorAll('[data-next]').forEach((b) => b.addEventListener('click', next));
   el.querySelectorAll('[data-done]').forEach((b) => b.addEventListener('click', () => finish(false)));
+  el.querySelector('[data-push]')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try { await enablePush(); b.closest('.tour-push').innerHTML = `<p>${ICON.check} Benachrichtigungen sind an.</p>`; }
+    catch (err) { b.disabled = false; toast(err.message, 4000); }
+  });
   el.querySelector('[data-go]')?.addEventListener('click', () => finish(true));
   el.querySelectorAll('[data-tour-ring]').forEach((b) => b.addEventListener('click', () => { b.classList.add('pop'); setTimeout(next, 350); }));
   const card = el.querySelector('.swcard.demo');

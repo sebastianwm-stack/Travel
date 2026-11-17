@@ -206,11 +206,23 @@ export function draftPlan(places, days, { start, end, home = null } = {}) {
   for (const d of days) {
     const onDay = places.filter((p) => p.day === d);
     const filled = new Set(onDay.map(slotOf).filter(Boolean));
+    // Abreisetag: nichts Weites mehr, die Gegend ist die rund um die Unterkunft
+    const leaving = d === end && home && hasPos(home);
+    if (leaving) groups.set(d, new Set());
     const group = [...groups.get(d)].map((id) => byId.get(id)).filter(Boolean);
-    const center = mean([...onDay, ...group].filter(hasPos)) || mean(places.filter(hasPos));
+    const center = leaving ? home : mean([...onDay, ...group].filter(hasPos)) || mean(places.filter(hasPos));
     out[d] = {};
-    for (const slot of daySlots(d, { start, end })) {
-      if (filled.has(slot)) continue;
+    // Route: jeder Abschnitt möglichst nah am vorigen Stopp und am nächsten festen Termin.
+    // Der Tag beginnt und endet an der Unterkunft.
+    const slots = daySlots(d, { start, end });
+    const fixedAt = (slot) => onDay.find((p) => slotOf(p) === slot && hasPos(p));
+    const homePos = home && hasPos(home) ? home : null;
+    let prev = homePos;
+    for (const [si, slot] of slots.entries()) {
+      if (filled.has(slot)) { prev = fixedAt(slot) || prev; continue; }
+      // danach nur noch Feststehendes oder nichts mehr: zurück Richtung Unterkunft denken
+      const laterOpen = slots.slice(si + 1).some((s) => !filled.has(s));
+      const nextFixed = slots.slice(si + 1).map(fixedAt).find(Boolean) || (laterOpen ? null : homePos);
       const score = (p) => {
         const fit = slotFit(p, slot);
         if (!fit) return -Infinity;
@@ -218,7 +230,8 @@ export function draftPlan(places, days, { start, end, home = null } = {}) {
         if (!groups.get(d).has(p.id) && dist > 3) return -Infinity; // nur Orte in der Gegend des Tages
         // Frühstück und Abend lieber in der Nähe der Unterkunft
         const nearHome = home && hasPos(home) && hasPos(p) && (slot === 'frueh' || slot === 'abend') ? km(home, p) * 0.35 : 0;
-        return fit * 2 + (p.hearts || 0) * 1.5 + (groups.get(d).has(p.id) ? 2 : 0) - dist * 0.6 - nearHome;
+        const leg = hasPos(p) ? (prev ? km(prev, p) * 0.45 : 0) + (nextFixed ? km(p, nextFixed) * 0.3 : 0) : 1;
+        return fit * 2 + (p.hearts || 0) * 1.5 + (groups.get(d).has(p.id) ? 2 : 0) - dist * 0.4 - nearHome - leg;
       };
       const ranked = places.filter((p) => !p.day && !used.has(p.id))
         .map((p) => [score(p), p]).filter(([s]) => s > -Infinity)
@@ -226,6 +239,7 @@ export function draftPlan(places, days, { start, end, home = null } = {}) {
       if (!ranked.length) continue;
       used.add(ranked[0]);
       out[d][slot] = { pick: ranked[0], alts: ranked.slice(1, 3) };
+      if (hasPos(byId.get(ranked[0]))) prev = byId.get(ranked[0]);
     }
   }
   return out;
