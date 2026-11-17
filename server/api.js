@@ -3,7 +3,7 @@
 import { json, fail, sha256, rid, newToken, str, isDate, isTime, num, daysOf, addDays, localParts } from './util.js';
 import { validCat, guessCat } from './cats.js';
 import { suggestPlan, draftPlan, SLOTS } from './plan.js';
-import { syncTrip, resolveUrl } from './maps.js';
+import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
 import { validEndpoint, pushReady, pushToTrip, sendPush } from './push.js';
@@ -183,6 +183,20 @@ export async function handleApi(request, env, url) {
     }
     if (inv.uses_left !== null) await env.DB.prepare('UPDATE invites SET uses_left = uses_left - 1 WHERE code_hash = ?').bind(inv.code_hash).run();
     return json({ token, tripId: inv.trip_id });
+  }
+
+  // Automatischer Abgleich: die GitHub-Aktion schickt die rohe Google-Antwort (Schlüssel SYNC_KEY)
+  if (path === '/maps/import' && method === 'POST') {
+    if (!env.SYNC_KEY || request.headers.get('x-sync-key') !== env.SYNC_KEY) return fail(403, 'Kein Zugriff.');
+    const listId = str(url.searchParams.get('list'), 80);
+    const text = await request.text();
+    let parsed;
+    try { parsed = parseList(JSON.parse(text.replace(/^\)\]\}'\s*/, ''))); } catch { return fail(400, 'Die Antwort von Google ließ sich nicht lesen.'); }
+    const { results: trips } = await env.DB.prepare("SELECT * FROM trips WHERE maps_url != ''").all();
+    const targets = trips.filter((t) => listIdFromUrl(t.maps_url) === listId);
+    const out = [];
+    for (const t of targets) out.push({ trip: t.name, ...(await importList(env, t, parsed)) });
+    return json({ ok: true, places: parsed.places.length, trips: out });
   }
 
   const ctx = await auth(request, env);

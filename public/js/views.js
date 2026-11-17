@@ -140,6 +140,7 @@ export function viewIdeas() {
       </div>
       <label class="switch small"><input type="checkbox" data-act="toggleOpen" ${ui.onlyOpen ? 'checked' : ''}> Nur Ideen ohne Tag</label>
       ${list.length ? `<div class="ideas">${list.map(ideaCard).join('')}</div>` : empty('Nichts gefunden', q ? 'Versuch einen anderen Suchbegriff.' : 'Hier landen alle Orte, die noch keinen Tag haben.')}
+      ${t.mapsSyncedAt ? `<p class="foot">Neue Orte aus eurer Google-Maps-Liste kommen automatisch dazu. Zuletzt ${ago(t.mapsSyncedAt)}.</p>` : ''}
     </div>${askBar()}`;
 }
 

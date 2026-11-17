@@ -1,0 +1,27 @@
+# Holt die geteilte Google-Maps-Liste und schickt sie an die Reisebande, die neue Orte übernimmt.
+# Läuft hier, weil Google den Abruf von Cloudflare aus blockt.
+# Braucht zwei Repository-Secrets: MAPS_LIST_ID (Kennung der Liste) und REISEBANDE_SYNC_KEY (= SYNC_KEY bei Cloudflare).
+name: Google-Maps-Liste abgleichen
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Liste holen und an die App schicken
+        env:
+          LIST_ID: ${{ secrets.MAPS_LIST_ID }}
+          SYNC_KEY: ${{ secrets.REISEBANDE_SYNC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LIST_ID}" ] || [ -z "${SYNC_KEY}" ]; then echo "Secrets fehlen"; exit 1; fi
+          PB=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "!1m4!1s${LIST_ID}!2e1!3m1!1e1!2e2!3e2!4i500!16b1")
+          curl -fsS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" \
+            "https://www.google.com/maps/preview/entitylist/getlist?authuser=0&hl=de&gl=de&pb=${PB}" -o list.json
+          test -s list.json
+          curl -fsS -X POST -H "x-sync-key: ${SYNC_KEY}" --data-binary @list.json "https://reisebande.pages.dev/api/maps/import?list=${LIST_ID}"
