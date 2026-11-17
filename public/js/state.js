@@ -1,6 +1,7 @@
 // Zustand der App: letzter Stand vom Server plus abgeleitete Hilfen.
 import { api, cacheState } from './api.js';
 import { todayIn, daysBetween } from './ui.js';
+import { frameOf } from './frame.js';
 
 export const S = {
   data: null,        // Antwort von /api/trip
@@ -54,6 +55,23 @@ export const localHeart = (id) => (d) => {
 };
 
 // ---------- Ableitungen ----------
+// Anreise und Abreise aus den Flugdaten (Landung, Hotel, Check-out, ab zum Flughafen)
+export const frame = () => frameOf(S.data.trip, S.data.items);
+
+// Wetter je Reisetag: einmal laden, nach drei Stunden neu
+const wx = { trip: null, at: 0, days: {}, loading: false };
+export function weatherOf(day) {
+  const t = S.data.trip;
+  if ((wx.trip !== t.id || Date.now() - wx.at > 3 * 3600e3) && !wx.loading) {
+    wx.loading = true;
+    api('/weather')
+      .then((r) => { Object.assign(wx, { trip: t.id, at: Date.now(), days: r.days || {} }); window.dispatchEvent(new Event('rb:render')); })
+      .catch(() => { Object.assign(wx, { trip: t.id, at: Date.now() }); })
+      .finally(() => { wx.loading = false; });
+  }
+  return wx.trip === t.id ? wx.days[day] || null : null;
+}
+
 export const me = () => S.data.me;
 export const trip = () => S.data.trip;
 export const member = (id) => S.data.members.find((m) => m.id === id);

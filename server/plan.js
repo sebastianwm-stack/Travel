@@ -5,6 +5,8 @@
 // Tagesgebiete. Sie kommen als "Abstecher" ans Ende eines passenden Tages, frühestens am späten Nachmittag.
 // Feste Termine eines Tages (mit Uhrzeit) bleiben frei; vorgeschlagene Stopps werden drumherum gelegt.
 
+import { daySlots, dayStartOf } from '../public/js/frame.js';
+
 const R = 6371;
 export function km(a, b) {
   const toRad = (d) => (d * Math.PI) / 180;
@@ -199,16 +201,16 @@ const FIT = {
 export const slotFit = (p, slot) => FIT[slot](p);
 
 // Welche Abschnitte ein Tag hat: Anreise nur abends, Abreise nur bis mittags
-export function daySlots(day, { start, end } = {}) {
-  if (day === start) return ['abend'];
-  if (day === end) return ['frueh', 'vormittag'];
-  return SLOTS;
-}
+// Freie Abschnitte je Tag: hängen am Anreisetag von der Landung, am Abreisetag vom Abflug ab (siehe frame.js)
+export { daySlots };
 
-export function draftPlan(places, days, { start, end, home = null, tt = null } = {}) {
+// Bei Regen oder Schnee (laut Vorhersage) lieber drinnen
+const WET_FIT = { Natur: -2, Weihnachten: -1, Kultur: 1, Shopping: 1, Café: 1, Essen: 1 };
+
+export function draftPlan(places, days, { start, end, home = null, tt = null, frame = null, wet = {} } = {}) {
   // Gegenden der Tage aus dem Tagesvorschlag (nahe Orte zusammen, Ausreißer als Abstecher)
   const groups = new Map(days.map((d) => [d, new Set()]));
-  for (const m of suggestPlan(places, days, { perDay: 5, lightDays: [start, end].filter(Boolean), dayStart: start ? { [start]: 18 } : {}, home, tt })) {
+  for (const m of suggestPlan(places, days, { perDay: 5, lightDays: [start, end].filter(Boolean), dayStart: start ? dayStartOf(frame, start) : {}, home, tt })) {
     groups.get(m.day)?.add(m.id);
   }
   const byId = new Map(places.map((p) => [p.id, p]));
@@ -225,7 +227,7 @@ export function draftPlan(places, days, { start, end, home = null, tt = null } =
     out[d] = {};
     // Route: jeder Abschnitt möglichst nah am vorigen Stopp und am nächsten festen Termin.
     // Der Tag beginnt und endet an der Unterkunft.
-    const slots = daySlots(d, { start, end });
+    const slots = daySlots(d, { start, end, frame });
     const fixedAt = (slot) => onDay.find((p) => slotOf(p) === slot && hasPos(p));
     const homePos = home && hasPos(home) ? home : null;
     let prev = homePos;
@@ -237,13 +239,14 @@ export function draftPlan(places, days, { start, end, home = null, tt = null } =
       const score = (p) => {
         const fit = slotFit(p, slot);
         if (!fit) return -Infinity;
+        const rain = wet[d] ? WET_FIT[p.cat] || 0 : 0;
         const dist = center && hasPos(p) ? km(center, p) : 3;
         if (!groups.get(d).has(p.id) && dist > 3) return -Infinity; // nur Orte in der Gegend des Tages
         // Frühstück und Abend lieber in der Nähe der Unterkunft
         const nearHome = home && hasPos(home) && hasPos(p) && (slot === 'frueh' || slot === 'abend') ? minutes(home, p, tt, d) * 0.035 : 0;
         // Wegezeit vom vorigen Stopp und zum nächsten festen Termin (Minuten)
         const leg = hasPos(p) ? (prev ? minutes(prev, p, tt, d) * 0.045 : 0) + (nextFixed ? minutes(nextFixed, p, tt, d) * 0.03 : 0) : 1;
-        return fit * 2 + (p.hearts || 0) * 1.5 + (groups.get(d).has(p.id) ? 2 : 0) - dist * 0.4 - nearHome - leg;
+        return (fit + rain) * 2 + (p.hearts || 0) * 1.5 + (groups.get(d).has(p.id) ? 2 : 0) - dist * 0.4 - nearHome - leg;
       };
       const ranked = places.filter((p) => !p.day && !used.has(p.id))
         .map((p) => [score(p), p]).filter(([s]) => s > -Infinity)

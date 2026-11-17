@@ -2,12 +2,14 @@
 //  Ablauf: fünf lockere Abschnitte (Frühstück bis Abend); freie Abschnitte zeigen einen Vorschlag aus den Ideen.
 //  Karte: der Tag als Route, darunter die Stopps als wischbare Karten.
 import { esc, ICON, fmtLong, toast, openSheet, weekday, dayNum, monthName } from './ui.js';
-import { S, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf, place, mutate, SLOTS, SLOT_LABEL, slotOf, whenLabel, localPlace } from './state.js';
+import { S, frame, trip, stopsOf, pool, defaultDay, heartsOf, commentsOf, place, mutate, SLOTS, SLOT_LABEL, slotOf, whenLabel, localPlace } from './state.js';
 import { api } from './api.js';
 import { dayChips, stopCard, sticker, avatars, empty, register, routeUrl, areaOf, photo } from './components.js';
 import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
 import { loadMapLib, baseMap, addPin, addRoute, addHome, hasCoords } from './map.js';
 import { routerFor } from './transit/index.js';
+import { daySlots } from './frame.js';
+import { weatherLine, weatherInfo } from './weather.js';
 
 export const planUi = { day: null, mode: 'ablauf', draft: null, stamp: '', loading: false, alt: {}, skip: new Set() };
 let map = null;
@@ -35,6 +37,7 @@ export function viewPlan() {
       <div class="plan-title"><h1><small>${dayNum(d)}. ${monthName(d)}</small>${weekday(d)}</h1>
         <div class="seg" role="group" aria-label="Ansicht"><button class="${planUi.mode === 'ablauf' ? 'on' : ''}" data-act="planMode" data-m="ablauf">Ablauf</button><button class="${planUi.mode === 'karte' ? 'on' : ''}" data-act="planMode" data-m="karte">Karte</button></div></div>
       ${dayChips(d)}
+      ${weatherLine(d, 'in-head')}
     </div>`;
   const tools = `<div class="plan-tools">
       <button class="btn sm" data-act="suggest">${ICON.spark}Reise vorplanen</button>
@@ -71,12 +74,13 @@ const SLOT_IC = {
 };
 function daySlotsOf(d) {
   const t = trip();
-  const base = d === t.start ? ['abend'] : d === t.end ? ['frueh', 'vormittag'] : SLOTS;
+  const base = daySlots(d, { start: t.start, end: t.end, frame: frame() });
   const used = new Set(stopsOf(d).map(slotOf).filter(Boolean));
   return SLOTS.filter((s) => base.includes(s) || used.has(s));
 }
 const HOME_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg>';
-const stampOf = () => S.data.places.map((p) => `${p.id}${p.day || ''}${p.slot || ''}${p.time || ''}`).join() + S.data.hearts.length + JSON.stringify(trip().hotel);
+const dur = (min) => (min < 60 ? `${min} Min.` : `${Math.floor(min / 60)} Std.${min % 60 ? ` ${min % 60} Min.` : ''}`);
+const stampOf = () => S.data.places.map((p) => `${p.id}${p.day || ''}${p.slot || ''}${p.time || ''}`).join() + S.data.hearts.length + JSON.stringify(trip().hotel) + JSON.stringify(S.data.items.map((i) => i.data));
 
 function ensureDraft() {
   const st = stampOf();
@@ -139,8 +143,11 @@ function ablauf(d) {
   ensureRouter();
   const t = trip();
   const stops = stopsOf(d);
+  const fr = frame();
+  const arrive = d === t.start ? fr.arrive : null;
+  const leave = d === t.end ? fr.leave : null;
   // Route des Tages: Unterkunft → Stopps und Vorschläge → Unterkunft
-  let last = t.hotel && d !== t.start ? t.hotel : null;
+  let last = t.hotel && (d !== t.start || arrive) ? t.hotel : null;
   const step = (p, sug) => { const h = leg(last, p, d, sug); if (hasCoords(p)) last = p; return h; };
   const loose = stops.filter((p) => !slotOf(p));
   let anySug = false;
@@ -168,12 +175,23 @@ function ablauf(d) {
       <button class="slot-add" data-act="addIdea" data-day="${d}" data-slot="${slot}" aria-label="Ort für ${SLOT_LABEL[slot]} hinzufügen">${ICON.plus}</button></div>${body}</section>`;
   }).join('');
   const back = t.hotel ? leg(last, t.hotel, d) : '';
-  const hint = d === t.start ? '<p class="hint">Anreisetag: Ankunft am späten Nachmittag, nach der Einreise bleibt der Abend.</p>'
-    : d === t.end ? '<p class="hint">Abreisetag: Der Vormittag ist noch frei, abends geht der Flug.</p>' : '';
-  const home = t.hotel ? `<div class="home-row">${HOME_IC}<span>${esc(t.hotel.name)}</span></div>` : '';
+  const isAdmin = S.data.me.role === 'admin';
+  const missing = (what) => `<p class="hint">${what} ${isAdmin ? '<a href="#/infos">Unter Infos die Flugzeiten eintragen</a>, dann plant die App das genau.' : 'Sobald die Flugzeiten unter Infos stehen, plant die App das genau.'}</p>`;
+  const wi = weatherInfo(d);
+  const hint = (d === t.start && !arrive ? missing('Anreisetag: Ankunft am späten Nachmittag, nach der Einreise bleibt der Abend.') : '')
+    + (d === t.end && !leave ? missing('Abreisetag: Der Vormittag ist noch frei, abends geht der Flug.') : '')
+    + (leave ? `<p class="hint">Check-out bis ${esc(leave.checkout)} Uhr. Das Gepäck kann bis zur Abfahrt im Hotel bleiben.</p>` : '')
+    + (wi?.wet ? '<p class="hint">Regen oder Schnee angesagt, die Vorschläge setzen eher auf drinnen.</p>' : '');
+  const hm = (cls, extra = '') => (t.hotel ? `<div class="home-row ${cls}">${HOME_IC}<span>${esc(t.hotel.name)}${extra}</span></div>` : '');
+  const startRow = arrive
+    ? `<div class="trip-row">${ICON.plane}<span><b>Landung ${esc(arrive.land)}${arrive.airport ? ` in ${esc(arrive.airport)}` : ''}</b><small>Einreise, Gepäck und Fahrt ins Hotel, ca. ${dur(75 + arrive.transfer)}</small></span></div>${hm('start', `<small>ca. ${esc(arrive.hotelAt)}</small>`)}`
+    : d !== t.start ? hm('start') : '';
+  const endRow = leave
+    ? back + hm('end', '<small>Gepäck holen</small>') + `<div class="trip-row go">${ICON.plane}<span><b>Ab zum Flughafen um ${esc(leave.leaveAt)}</b><small>Abflug ${esc(leave.dep)}${leave.airport ? ` in ${esc(leave.airport)}` : ''}, Fahrt ca. ${dur(leave.transfer)}, 3 Std. vorher da sein</small></span></div>`
+    : t.hotel ? back + hm('end') : '';
   return `${hint}
     ${anySug ? `<button class="btn primary wide" data-act="sugTakeAll" data-day="${d}">${ICON.check}Alle Vorschläge für ${weekday(d)} übernehmen</button>` : ''}
-    <div class="slots">${home && d !== t.start ? home.replace('home-row', 'home-row start') : ''}${sections}${home ? back + home.replace('home-row', 'home-row end') : ''}</div>
+    <div class="slots">${startRow}${sections}${endRow}</div>
     ${loose.length ? `<section class="slot"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${I('<circle cx="12" cy="12" r="3"/>')}</span><h3>Irgendwann</h3></div>${loose.map(rowCard).join('')}</section>` : ''}`;
 }
 

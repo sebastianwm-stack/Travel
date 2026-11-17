@@ -1,6 +1,7 @@
 // Hauptansichten: Heute, Ideen, Infos. Der Plan liegt in plan.js. Klicks laufen über data-act.
 import { esc, ICON, avatar, fmtChip, fmtShort, weekday, dayNum, monthName, ago, toast, openSheet, closeSheet } from './ui.js';
-import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf } from './state.js';
+import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf, frame } from './state.js';
+import { weatherInfo, weatherLine } from './weather.js';
 import { hero, stopCard, ideaCard, sticker, avatars, empty, register, photo, resolveImages } from './components.js';
 import { showLink } from './sheets.js';
 import { storyRing, openStory } from './story.js';
@@ -33,6 +34,7 @@ export function viewToday() {
       sub: `${stops.length} ${stops.length === 1 ? 'Stopp' : 'Stopps'} geplant`,
       badge: next ? `Gleich: ${next.time} ${shortTitle(next.title).split(' ').slice(0, 3).join(' ')}` : '',
     });
+    body += todayFrame(ph.today);
     body += storiesRow();
     body += announceBlock();
     body += next ? `<section class="block"><div class="block-h"><h2>Als Nächstes</h2></div>${stopCard(next)}</section>` : '';
@@ -49,11 +51,31 @@ export function viewToday() {
       badge: booked.length ? `${shortTitle(booked[0].title).split(' ').slice(0, 2).join(' ')} gebucht` : '',
     });
     body += storiesRow();
+    body += weatherRow();
     body += swipeTeaser();
     body += favorites();
     body += newsBlock();
   }
   return `${h}<div class="page">${body}</div>${askBar()}`;
+}
+
+// Wetter für alle Reisetage (vor der Reise)
+function weatherRow() {
+  const t = trip();
+  const list = t.days.map((d) => [d, weatherInfo(d)]).filter(([, w]) => w);
+  if (!list.length) return '';
+  const typical = list.every(([, w]) => w.typical);
+  return `<section class="block"><div class="block-h"><h2>Wetter</h2><small class="muted">${typical ? `üblich für die Tage, Vorhersage ab ${fmtShort(list[0][1].from)}` : 'Vorhersage'}</small></div>
+    <div class="wx-days">${list.map(([d, w]) => `<a class="wx-day" href="#/plan" data-act="gotoDay" data-day="${d}">${w.icon}<b>${fmtChip(d)}</b><span>${w.short}</span></a>`).join('')}</div></section>`;
+}
+// Während der Reise: Wetter, und am An- bzw. Abreisetag die Zeiten
+function todayFrame(day) {
+  const t = trip();
+  const fr = frame();
+  let out = weatherLine(day, 'today');
+  if (fr.arrive && day === t.start) out += `<div class="trip-row">${ICON.plane}<span><b>Landung ${esc(fr.arrive.land)}${fr.arrive.airport ? ` in ${esc(fr.arrive.airport)}` : ''}</b><small>Im Hotel ca. ${esc(fr.arrive.hotelAt)}, Check-in ab ${esc(fr.arrive.checkin)}</small></span></div>`;
+  if (fr.leave && day === t.end) out += `<div class="trip-row go">${ICON.plane}<span><b>Ab zum Flughafen um ${esc(fr.leave.leaveAt)}</b><small>Check-out bis ${esc(fr.leave.checkout)}, Abflug ${esc(fr.leave.dep)}${fr.leave.airport ? ` in ${esc(fr.leave.airport)}` : ''}</small></span></div>`;
+  return out ? `<section class="block today-frame">${out}</section>` : '';
 }
 
 function storiesRow(title = 'Eure Tage') {
@@ -145,6 +167,45 @@ export function viewIdeas() {
 }
 
 // ---------- INFOS ----------
+const FLIGHT_DIR = { hin: 'Hinflug', rueck: 'Rückflug' };
+function itemSub(i) {
+  const d = i.data || {};
+  if (i.kind === 'flight') {
+    if (d.dep || d.arr) return `<small>${[d.date ? fmtShort(d.date) : '', `${d.dep || '?'} ${esc(d.from || '')} → ${d.arr || '?'} ${esc(d.to || '')}`, d.no ? esc(d.no) : ''].filter(Boolean).join(' · ')}</small>`;
+    return '<small class="warn">Uhrzeiten fehlen noch</small>';
+  }
+  if (i.kind === 'stay' && d.from) return `<small>${fmtShort(d.from)} bis ${fmtShort(d.to)}${d.checkin || d.checkout ? ` · Check-in ${esc(d.checkin || '15:00')}, Check-out ${esc(d.checkout || '11:00')}` : ''}</small>`;
+  return d.status ? `<small>${esc(d.status)}</small>` : '';
+}
+// Formular für Flug, Unterkunft oder Anreise; ohne Eintrag zum Anlegen, sonst zum Bearbeiten
+function itemForm(i) {
+  const k = i?.kind || 'flight';
+  const d = { ...(i?.data || {}) };
+  const t = trip();
+  // ältere Flug-Einträge ohne Richtung: aus dem Titel ableiten
+  if (k === 'flight' && !d.dir) d.dir = /rück|zurück|return/i.test(i?.title || '') ? 'rueck' : 'hin';
+  const v = (x) => esc(x ?? '');
+  const fs = (kind, html) => `<fieldset data-k="${kind}" ${k === kind ? '' : 'disabled hidden'}>${html}</fieldset>`;
+  return `<form class="form" data-itemform ${i ? `data-id="${i.id}"` : ''}>
+    ${i ? `<input type="hidden" name="kind" value="${k}">` : `<label>Art<select name="kind" data-kindsel><option value="flight">Flug</option><option value="stay">Unterkunft</option><option value="transport">Anreise, Zug, Auto</option></select></label>`}
+    ${fs('flight', `
+      <div class="two"><label>Richtung<select name="d.dir"><option value="hin" ${d.dir !== 'rueck' ? 'selected' : ''}>Hinflug</option><option value="rueck" ${d.dir === 'rueck' ? 'selected' : ''}>Rückflug</option></select></label>
+        <label>Datum (Abflug)<input type="date" name="d.date" value="${v(d.date || (d.dir === 'rueck' ? t.end : t.start))}"></label></div>
+      <div class="two"><label>Von (Flughafen)<input name="d.from" value="${v(d.from)}" maxlength="4" placeholder="FRA" autocapitalize="characters"></label>
+        <label>Nach<input name="d.to" value="${v(d.to)}" maxlength="4" placeholder="JFK" autocapitalize="characters"></label></div>
+      <div class="two"><label>Abflug (Ortszeit)<input type="time" name="d.dep" value="${v(d.dep)}"></label>
+        <label>Ankunft (Ortszeit)<input type="time" name="d.arr" value="${v(d.arr)}"></label></div>
+      <label>Flugnummer<input name="d.no" value="${v(d.no)}" maxlength="12" placeholder="DE 2014"></label>
+      <p class="hint">Mit den Uhrzeiten plant die App Anreise- und Abreisetag: Einreise, Fahrt ins Hotel, wann ihr zum Flughafen müsst.</p>`)}
+    ${fs('stay', `
+      <div class="two"><label>Von<input type="date" name="d.from" value="${v(d.from || t.start)}"></label><label>Bis<input type="date" name="d.to" value="${v(d.to || t.end)}"></label></div>
+      <div class="two"><label>Check-in ab<input type="time" name="d.checkin" value="${v(d.checkin || '15:00')}"></label><label>Check-out bis<input type="time" name="d.checkout" value="${v(d.checkout || '11:00')}"></label></div>
+      <label>Link zur Buchung<input name="d.link" type="url" value="${v(d.link)}" placeholder="https://…"></label>`)}
+    <label>Titel<input name="title" maxlength="300" value="${v(i?.title)}" placeholder="z. B. Condor FRA nach JFK"></label>
+    <label>Notiz<textarea name="note" rows="2" maxlength="2000" placeholder="Buchungsnummer, wer die Tickets hat">${v(i?.note)}</textarea></label>
+    <button class="btn primary">${i ? 'Speichern' : 'Eintragen'}</button></form>`;
+}
+
 export function viewInfos() {
   const t = trip();
   const isAdmin = me().role === 'admin';
@@ -155,15 +216,11 @@ export function viewInfos() {
   return `<div class="top"><h1>Infos</h1></div>
   <div class="page">
     <section class="block"><div class="block-h"><h2>Flüge und Hotel</h2></div>
-      ${travel.map((i) => `<details class="info"><summary><span class="ic">${icon[i.kind] || ICON.doc}</span><span><b>${esc(i.title)}</b>${i.kind === 'stay' && i.data.from ? `<small>${fmtShort(i.data.from)} bis ${fmtShort(i.data.to)}</small>` : i.data.status ? `<small>${esc(i.data.status)}</small>` : ''}</span></summary>
+      ${travel.map((i) => `<details class="info"><summary><span class="ic">${icon[i.kind] || ICON.doc}</span><span><b>${esc(i.title)}</b>${itemSub(i)}</span></summary>
         ${i.note ? `<p>${esc(i.note)}</p>` : ''}${i.data.link ? `<p><a href="${esc(i.data.link)}" target="_blank" rel="noopener">Buchung ansehen</a></p>` : ''}
-        ${isAdmin ? `<p><button class="link" data-act="delItem" data-id="${i.id}">${ICON.trash}Entfernen</button></p>` : ''}</details>`).join('') || '<p class="hint">Noch nichts eingetragen.</p>'}
-      ${isAdmin ? `<details class="edit"><summary>${ICON.plus} Flug, Hotel oder Anreise eintragen</summary>
-        <form class="form" data-additem>
-          <label>Art<select name="kind"><option value="flight">Flug</option><option value="stay">Unterkunft</option><option value="transport">Anreise, Zug, Auto</option></select></label>
-          <label>Titel<input name="title" required maxlength="300" placeholder="z. B. Lufthansa FRA nach JFK"></label>
-          <label>Notiz<textarea name="note" rows="2" maxlength="2000" placeholder="Abflugzeit, Buchungsnummer, wer die Tickets hat"></textarea></label>
-          <button class="btn primary">Eintragen</button></form></details>` : ''}
+        ${isAdmin ? `<details class="edit"><summary>${ICON.edit} Bearbeiten</summary>${itemForm(i)}</details>
+          <p><button class="link" data-act="delItem" data-id="${i.id}">${ICON.trash}Entfernen</button></p>` : ''}</details>`).join('') || '<p class="hint">Noch nichts eingetragen.</p>'}
+      ${isAdmin ? `<details class="edit"><summary>${ICON.plus} Flug, Hotel oder Anreise eintragen</summary>${itemForm(null)}</details>` : ''}
     </section>
 
     <section class="block"><div class="block-h"><h2>Unterkunft auf der Karte</h2></div>
@@ -221,10 +278,22 @@ export function mountView(root, name) {
     f.briefingHour = Number(f.briefingHour);
     try { await mutate('/trip', { method: 'PATCH', body: f }); toast('Gespeichert'); } catch (err) { toast(err.message); }
   });
-  root.querySelector('form[data-additem]')?.addEventListener('submit', async (e) => {
+  root.querySelectorAll('[data-kindsel]').forEach((sel) => sel.addEventListener('change', () => {
+    sel.closest('form').querySelectorAll('fieldset[data-k]').forEach((f) => { const on = f.dataset.k === sel.value; f.disabled = !on; f.hidden = !on; });
+  }));
+  root.querySelectorAll('form[data-itemform]').forEach((form) => form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await mutate('/items', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); toast('Eingetragen'); } catch (err) { toast(err.message); }
-  });
+    const f = new FormData(form);
+    const id = form.dataset.id;
+    const old = id ? S.data.items.find((x) => x.id === id) : null;
+    const data = { ...(old?.data || {}) };
+    for (const [k, val] of f.entries()) if (k.startsWith('d.')) data[k.slice(2)] = ['from', 'to'].includes(k.slice(2)) && f.get('kind') === 'flight' ? String(val).trim().toUpperCase() : String(val).trim();
+    let title = String(f.get('title') || '').trim();
+    if (!title && f.get('kind') === 'flight') title = `${FLIGHT_DIR[data.dir] || 'Flug'} ${data.from || ''} → ${data.to || ''}`.trim();
+    if (!title) { toast('Bitte einen Titel angeben.'); return; }
+    const body = { kind: f.get('kind'), title, note: f.get('note') || '', data };
+    try { await mutate(id ? `/items/${id}` : '/items', { method: id ? 'PATCH' : 'POST', body }); toast(id ? 'Gespeichert' : 'Eingetragen'); } catch (err) { toast(err.message); }
+  }));
   const ver = root.querySelector('#ver');
   if (ver) fetch('/version.txt', { cache: 'no-store' }).then((r) => r.text()).then((v) => { ver.textContent = `Version ${v.trim()}`; }).catch(() => {});
 }

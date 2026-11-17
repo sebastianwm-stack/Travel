@@ -539,3 +539,33 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 .leg.long .leg-o:first-child { color: var(--tomato); }
 .leg.to-sug { opacity: .75; }
 .leg-alt { display: flex; align-items: center; gap: 8px; }
+
+/* Formular-Gruppen je Art (Flug, Unterkunft) */
+.form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 12px; }
+.form fieldset[hidden] { display: none; }
+.info small.warn { color: var(--tomato); font-weight: 700; }
+
+/* Anreise, Abreise */
+.trip-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 16px; background: var(--lime); color: var(--ink); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+.trip-row svg { width: 22px; height: 22px; flex: none; }
+.trip-row span { display: grid; gap: 1px; }
+.trip-row b { font-size: 15px; }
+.trip-row small { font-size: 12.5px; font-weight: 600; color: #3A3833; }
+.trip-row.go { background: #FFD9CF; }
+.home-row span { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.home-row small { font-weight: 600; font-size: 12px; opacity: .75; }
+
+/* Wetter */
+.wx { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: #3A3833; margin: 0; }
+.wx svg { width: 28px; height: 28px; flex: none; }
+.wx span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.wx small { font-weight: 600; font-size: 12px; color: var(--mute); }
+.wx.in-head { padding: 2px 2px 0; }
+.wx.typ svg { opacity: .8; }
+.wx-days { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.wx-day { flex: 1 0 64px; display: grid; justify-items: center; gap: 2px; padding: 8px 6px; background: var(--card); border: 1.5px solid var(--line); border-radius: 16px; color: var(--ink); text-decoration: none; font-size: 13px; }
+.wx-day svg { width: 32px; height: 32px; }
+.wx-day b { font-size: 13px; }
+.wx-day span { color: var(--mute); font-weight: 700; font-size: 12.5px; }
+.today-frame { display: grid; gap: 10px; }
+.block-h small.muted { color: var(--mute); font-weight: 600; font-size: 12px; }

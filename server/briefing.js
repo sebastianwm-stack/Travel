@@ -2,8 +2,22 @@
 // Am Abend vor dem Abflug richtet sich die Uhrzeit nach der Heimat-Zeitzone.
 import { addDays, localParts } from './util.js';
 import { pushToTrip } from './push.js';
+import { frameOf } from '../public/js/frame.js';
+import { weatherFor, weatherLoc, weatherSentence } from './weather.js';
 
-export function briefingFor(trip, places, tomorrow) {
+// frame: Anreise/Abreise (frame.js), wx: Wetter je Tag (weather.js)
+export function briefingFor(trip, places, tomorrow, { frame = null, wx = {} } = {}) {
+  const msg = planFor(trip, places, tomorrow);
+  const extra = [];
+  const arr = frame?.arrive, lv = frame?.leave;
+  if (tomorrow === trip.start && arr) extra.push(`${arr.dep ? `Abflug ${arr.dep}${arr.from ? ` in ${arr.from}` : ''}, ` : ''}Landung ${arr.land}${arr.airport ? ` in ${arr.airport}` : ''}, im Hotel ca. ${arr.hotelAt}.`);
+  if (tomorrow === trip.end && lv) extra.push(`Check-out bis ${lv.checkout}, ab zum Flughafen um ${lv.leaveAt}.`);
+  const w = weatherSentence(wx?.[tomorrow]);
+  if (w) extra.push(w);
+  return { title: msg.title, body: [...extra, msg.body].join(' ') };
+}
+
+function planFor(trip, places, tomorrow) {
   const ps = places.filter((p) => p.day === tomorrow && !p.deleted)
     .sort((a, b) => (a.time || '99').localeCompare(b.time || '99') || a.ord - b.ord);
   const isFirst = tomorrow === trip.start;
@@ -34,7 +48,9 @@ export async function runBriefings(env, now = Date.now()) {
     else if (there.date >= trip.start && there.date < trip.end) local = there;
     if (!local || local.hour !== trip.briefing_hour || trip.last_briefing === local.date) continue;
     const { results: places } = await env.DB.prepare('SELECT * FROM places WHERE trip_id = ? AND deleted = 0').bind(trip.id).all();
-    const msg = briefingFor(trip, places, addDays(local.date, 1));
+    const { results: items } = await env.DB.prepare('SELECT * FROM items WHERE trip_id = ?').bind(trip.id).all();
+    const wx = await weatherFor(env, trip, weatherLoc(trip, places)).catch(() => ({}));
+    const msg = briefingFor(trip, places, addDays(local.date, 1), { frame: frameOf(trip, items), wx });
     const r = await pushToTrip(env, trip.id, { ...msg, tag: 'briefing', url: './#/heute' });
     await env.DB.prepare('UPDATE trips SET last_briefing = ? WHERE id = ?').bind(local.date, trip.id).run();
     sent += r.sent;

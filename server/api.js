@@ -4,6 +4,8 @@ import { json, fail, sha256, rid, newToken, str, isDate, isTime, num, daysOf, ad
 import { validCat, guessCat } from './cats.js';
 import { suggestPlan, draftPlan, SLOTS } from './plan.js';
 import { routerFor, ttOf } from '../public/js/transit/index.js';
+import { frameOf } from '../public/js/frame.js';
+import { weatherFor, wetDays, weatherLoc } from './weather.js';
 import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
@@ -68,6 +70,8 @@ function itemOut(i) {
   return { id: i.id, kind: i.kind, title: i.title, note: i.note, data: safeJSON(i.data, {}), ord: i.ord };
 }
 const safeJSON = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
+
+const within = (promise, ms, fallback) => Promise.race([promise, new Promise((r) => setTimeout(() => r(fallback), ms))]);
 
 // ---------- Anlegen einer Reise aus einer Importdatei ----------
 
@@ -323,6 +327,12 @@ export async function handleApi(request, env, url, ctx) {
     return json({ hearted: true });
   }
 
+  // --- Wetter je Reisetag ---
+  if (path === '/weather' && method === 'GET') {
+    const places = (await env.DB.prepare('SELECT lat, lng FROM places WHERE trip_id = ? AND deleted = 0 AND lat IS NOT NULL LIMIT 200').bind(trip.id).all()).results;
+    return json({ days: await weatherFor(env, trip, weatherLoc(trip, places)).catch(() => ({})) });
+  }
+
   // --- Tagesgerüst und Vorschläge ---
   if (path === '/plan/draft' && method === 'POST') {
     const s = await loadState(env, trip);
@@ -331,8 +341,9 @@ export async function handleApi(request, env, url, ctx) {
     const days = daysOf(trip);
     const b = await body(request);
     const home = safeJSON(trip.hotel || 'null', null);
-    const tt = ttOf(await routerFor([home, ...s.places]));
-    const draft = draftPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), days, { start: trip.start, end: trip.end, home, tt });
+    const [router, wx] = await Promise.all([routerFor([home, ...s.places]), within(weatherFor(env, trip, weatherLoc(trip, s.places)).catch(() => ({})), 1500, {})]);
+    const frame = frameOf(trip, s.items.map(itemOut));
+    const draft = draftPlan(s.places.map((p) => ({ ...p, hearts: hc.get(p.id) || 0 })), days, { start: trip.start, end: trip.end, home, tt: ttOf(router), frame, wet: wetDays(wx) });
     if (Array.isArray(b.days)) for (const d of Object.keys(draft)) if (!b.days.includes(d)) delete draft[d];
     return json({ draft });
   }
@@ -513,7 +524,8 @@ export async function handleApi(request, env, url, ctx) {
     if (!pushReady(env)) return fail(503, 'Benachrichtigungen sind auf dem Server noch nicht eingerichtet.');
     const { results } = await env.DB.prepare('SELECT * FROM push_subs WHERE member_id = ?').bind(me.id).all();
     const s = await loadState(env, trip);
-    const msg = briefingFor(trip, s.places, nextBriefingDay(trip));
+    const bday = nextBriefingDay(trip);
+    const msg = briefingFor(trip, s.places, bday, { frame: frameOf(trip, s.items.map(itemOut)), wx: await within(weatherFor(env, trip, weatherLoc(trip, s.places)).catch(() => ({})), 2000, {}) });
     const out = [];
     for (const sub of results) out.push(await sendPushVerbose(env, sub, { ...msg, tag: 'briefing', url: '/#/heute' }));
     const ok = out.filter((r) => r.status >= 200 && r.status < 300).length;
@@ -522,7 +534,8 @@ export async function handleApi(request, env, url, ctx) {
   if (path === '/briefing' && method === 'GET') {
     const s = await loadState(env, trip);
     const day = nextBriefingDay(trip);
-    return json({ day, ...briefingFor(trip, s.places, day) });
+    const wx = await within(weatherFor(env, trip, weatherLoc(trip, s.places)).catch(() => ({})), 2000, {});
+    return json({ day, ...briefingFor(trip, s.places, day, { frame: frameOf(trip, s.items.map(itemOut)), wx }) });
   }
   if (path === '/announce' && method === 'POST') {
     // kurze Nachricht an alle, z. B. "Treffpunkt 15 Uhr Lobby"

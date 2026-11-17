@@ -279,3 +279,72 @@ test('U-Bahn-Router: plausible Fahrzeiten aus dem MTA-Fahrplan', async () => {
   assert.equal(await routerFor([{ lat: 52.52, lng: 13.40 }]), null);
   assert.equal(ttOf(null), null);
 });
+
+test('Reiserahmen: Flugzeiten bestimmen die freien Abschnitte an An- und Abreisetag', async () => {
+  const { frameOf, daySlots } = await import('../public/js/frame.js');
+  const trip = { start: '2026-12-17', end: '2026-12-21' };
+  const items = [
+    { kind: 'flight', data: { dir: 'hin', date: '2026-12-17', dep: '10:15', arr: '13:05', from: 'FRA', to: 'JFK' } },
+    { kind: 'flight', data: JSON.stringify({ dir: 'rueck', date: '2026-12-21', dep: '18:30', from: 'JFK', to: 'FRA' }) },
+    { kind: 'stay', data: { checkout: '12:00' } },
+  ];
+  const fr = frameOf(trip, items);
+  assert.equal(fr.arrive.hotelAt, '15:30'); // 13:05 + 75 Min. Einreise + 70 Min. Fahrt, aufgerundet
+  assert.equal(fr.leave.leaveAt, '14:15');  // 18:30 − 3 Std. − 70 Min. Fahrt
+  assert.equal(fr.leave.checkout, '12:00');
+  assert.deepEqual(daySlots('2026-12-17', { ...trip, frame: fr }), ['nachmittag', 'abend']);
+  assert.deepEqual(daySlots('2026-12-21', { ...trip, frame: fr }), ['frueh', 'vormittag', 'mittag']);
+  assert.deepEqual(daySlots('2026-12-19', { ...trip, frame: fr }), ['frueh', 'vormittag', 'mittag', 'nachmittag', 'abend']);
+  // ohne Uhrzeiten wie bisher
+  const none = frameOf(trip, [{ kind: 'flight', data: {} }]);
+  assert.deepEqual(daySlots('2026-12-17', { ...trip, frame: none }), ['abend']);
+  assert.deepEqual(daySlots('2026-12-21', { ...trip, frame: none }), ['frueh', 'vormittag']);
+});
+
+test('Wetter: Vorhersage für nahe Tage, übliche Werte für ferne, alles zwischengespeichert', async () => {
+  const { weatherFor, wetDays, weatherSentence } = await import('../server/weather.js');
+  const store = new Map();
+  const env = { FILES: { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } } };
+  const today = new Date().toISOString().slice(0, 10);
+  const add = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const trip = { start: add(today, 14), end: add(today, 18), tz: 'UTC' };
+  let calls = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls++;
+    const u = new URL(url);
+    const s = u.searchParams.get('start_date'), e = u.searchParams.get('end_date');
+    const days = []; for (let d = s; d <= e; d = add(d, 1)) days.push(d);
+    const daily = u.hostname.startsWith('archive')
+      ? { time: days, temperature_2m_max: days.map(() => 6), temperature_2m_min: days.map(() => 0), precipitation_sum: days.map((_, i) => (i % 2 ? 3 : 0)), snowfall_sum: days.map(() => 0) }
+      : { time: days, weather_code: days.map(() => 63), temperature_2m_max: days.map(() => 5.4), temperature_2m_min: days.map(() => 1.2), precipitation_probability_max: days.map(() => 80), snowfall_sum: days.map(() => 0) };
+    return new Response(JSON.stringify({ daily }), { status: 200 });
+  };
+  try {
+    const wx = await weatherFor(env, trip, { lat: 40.71, lng: -74.01 });
+    assert.equal(wx[trip.start].kind, 'forecast');
+    assert.equal(wx[trip.start].tmax, 5);
+    assert.equal(wx[trip.end].kind, 'typical');
+    assert.equal(wx[trip.end].tmax, 6);
+    assert.ok(wetDays(wx)[trip.start], 'Regen angesagt');
+    assert.ok(!wetDays(wx)[trip.end], 'übliche Werte lösen keinen Regentag aus');
+    assert.match(weatherSentence(wx[trip.start]), /1 bis 5 Grad, Regen wahrscheinlich/);
+    const n = calls;
+    await weatherFor(env, trip, { lat: 40.71, lng: -74.01 });
+    assert.equal(calls, n, 'zweites Mal aus dem Zwischenspeicher');
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('Abendbriefing nennt Landung, Abfahrt zum Flughafen und Wetter', async () => {
+  const { frameOf } = await import('../public/js/frame.js');
+  const trip = { start: '2026-12-17', end: '2026-12-21', dest: 'New York', name: 'NYC' };
+  const frame = frameOf(trip, [
+    { kind: 'flight', data: { dir: 'hin', date: '2026-12-17', dep: '10:15', arr: '13:05', from: 'FRA', to: 'JFK' } },
+    { kind: 'flight', data: { dir: 'rueck', date: '2026-12-21', dep: '18:30', from: 'JFK' } },
+  ]);
+  const first = briefingFor(trip, [], '2026-12-17', { frame, wx: { '2026-12-17': { kind: 'forecast', tmin: 1, tmax: 5, rain: 10, snow: 0 } } });
+  assert.match(first.body, /Abflug 10:15 in FRA, Landung 13:05 in JFK, im Hotel ca\. 15:30/);
+  assert.match(first.body, /1 bis 5 Grad, eher trocken/);
+  const last = briefingFor(trip, [], '2026-12-21', { frame });
+  assert.match(last.body, /Check-out bis 11:00, ab zum Flughafen um 14:15/);
+});
