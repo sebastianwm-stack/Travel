@@ -68,7 +68,7 @@ http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const request = new Request(url, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) });
-    const r = await worker.fetch(request, { ...env, ASSETS: null });
+    const r = await worker.fetch(request, env);
     res.writeHead(r.status, Object.fromEntries(r.headers));
     res.end(Buffer.from(await r.arrayBuffer()));
     return;

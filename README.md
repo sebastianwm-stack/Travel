@@ -11,7 +11,7 @@ Gestaltung: "Sticker-Board". Warmes Papier, eine kräftige Kopfzeile mit Skyline
 - **Plan:** Der Tag als Route auf einer Vektorkarte (OpenFreeMap, flacher, bunter Stil in den App-Farben), darunter die Stopps als wischbare Karten. Die Karte folgt der Karte im Karussell. Ideen ohne Tag liegen blass im Hintergrund, damit man sieht, was in der Nähe ist. Wer lieber liest, schaltet auf Liste um. Mit **Vorschlag** verteilt die App Ideen ohne Tag so, dass nahe Orte am selben Tag landen und Ideen mit vielen Herzen zuerst drankommen; am Anreisetag beginnt der Vorschlag abends.
 - **Ideen swipen:** Nach rechts heißt will ich (Herz), nach links eher nicht. Wenn alle ein Herz vergeben haben, gibt es ein Match. Daneben die Ansicht **Alle** mit Suche und Kategorien.
 - **Neue Ideen:** per Google-Maps-Link (Teilen, Link kopieren, einfügen) oder per Name.
-- **Google-Maps-Liste:** Unter Ideen → Alle → Abgleichen liest die App eine geteilte Google-Maps-Liste und ergänzt neue Orte. Bestehende Orte bekommen genaue Koordinaten, gelöscht wird nichts. Google bietet dafür keine offizielle Schnittstelle. Die App liest die Liste so, wie Google Maps sie im Browser lädt, und das kann jederzeit brechen. Die Fehlermeldung sagt das dann. Einzelne Orte per Link gehen immer.
+- **Google-Maps-Liste:** Unter Ideen → Alle → Abgleichen versucht die App, eine geteilte Google-Maps-Liste zu lesen. Google bietet dafür keine offizielle Schnittstelle und blockiert die Abfrage von Cloudflare aus im Moment (HTTP 429). Einzelne Orte per Link gehen immer.
 - **Kommentare, Fotos, PDFs:** an jedem Ort und jedem Tag. Fotos werden vor dem Hochladen verkleinert, höchstens 20 MB pro Datei.
 - **Reiseberater:** über Cloudflare Workers AI (Llama 3.3 70B, kostenloses Tageskontingent, kein API-Schlüssel). Er kennt den Plan, die Ideen, die Notizen und weiß, wer wo hinwill.
 - **Abendbriefing:** Um 20 Uhr Ortszeit kommt eine Benachrichtigung mit dem Plan für morgen, am Abend vor dem Abflug nach Heimatzeit. Jede Person schaltet sie unter Infos ein, auf dem iPhone nur in der App vom Home-Bildschirm.
@@ -43,14 +43,23 @@ dev-server.mjs        lokaler Testserver (D1 über node:sqlite)
 tests/                npm test
 ```
 
-## Online bringen (einmalig)
+## Online
 
-1. Cloudflare-Dashboard → **Workers & Pages** → **Create** → **Import a repository** → dieses Repo und den Branch wählen. Build-Befehl leer lassen, Deploy-Befehl `npx wrangler deploy`.
-2. Beim ersten Deploy legt Cloudflare die D1-Datenbank `reisebande` und den KV-Speicher für Dateien selbst an. Klappt das nicht, beide im Dashboard anlegen und die IDs in `wrangler.jsonc` eintragen (`database_id` bzw. `id`).
-3. Unter **Settings → Variables and Secrets** das Secret `VAPID_PRIVATE_JWK` anlegen. Der passende öffentliche Schlüssel steht in `wrangler.jsonc`. Ohne Secret läuft alles außer den Benachrichtigungen.
-4. Die Adresse öffnen. Solange es noch keine Reise gibt, erscheint "Neue Reise": entweder von Hand anlegen oder eine vorbereitete Reise-Datei (.json) laden. Danach lädt die Reiseleitung unter Infos die anderen ein.
+Die App läuft unter **https://reisebande.pages.dev**.
 
-Danach baut und veröffentlicht jeder Push auf den Branch automatisch neu. Bei Änderungen an `public/` die Version in `public/version.txt` hochzählen, dann laden die installierten Apps beim nächsten Öffnen neu.
+- **Pages-Projekt `reisebande`:** die App samt Schnittstelle. Das Worker-Bundle wird als `_worker.js` hochgeladen, die Dateien aus `public/` stecken darin (`server/static-files.js`, erzeugt von `npm run build`).
+- **Worker `reisebande`:** derselbe Code, nur für das stündliche Abendbriefing (Cron), ohne öffentliche Adresse. Pages kann keine zeitgesteuerten Aufgaben.
+- **Gemeinsam genutzt:** D1-Datenbank `reisebande`, KV-Speicher `reisebande-files`, Workers AI und das Secret `VAPID_PRIVATE_JWK` (beim Worker und im Pages-Projekt).
+
+Veröffentlichen:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=… npm run deploy
+```
+
+Das Skript baut, veröffentlicht den Cron-Worker per `wrangler deploy` und lädt das Bundle über die Pages-API hoch. `wrangler pages deploy` und der normale Asset-Upload scheitern in Cloud-Sessions am Proxy, deshalb dieser Weg. Bei Änderungen an `public/` die Version in `public/version.txt` hochzählen, dann laden die installierten Apps beim nächsten Öffnen neu.
+
+Eine neue Reise legt die Reiseleitung über die Pille oben in der Kopfzeile an. Solange es gar keine Reise gibt, zeigt die App "Neue Reise" mit der Möglichkeit, eine Reise-Datei (.json) zu laden.
 
 ## Reise-Datei (Import)
 

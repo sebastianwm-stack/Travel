@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "node --no-warnings dev-server.mjs",
-    "test": "node --no-warnings --test tests/*.test.mjs"
+    "test": "node --no-warnings --test tests/*.test.mjs",
+    "build": "node scripts/build-static.mjs",
+    "deploy": "bash scripts/deploy.sh"
   },
   "devDependencies": {
     "wrangler": "^4.164.0"

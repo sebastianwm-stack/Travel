@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS members (
 );
 
 -- Einladungslinks der Reiseleitung. Gespeichert ist nur der Hash des Codes.
-CREATE TABLE invites (
+CREATE TABLE IF NOT EXISTS invites (
   code_hash TEXT PRIMARY KEY,
   trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
   created_by TEXT,

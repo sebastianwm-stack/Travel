@@ -32,6 +32,7 @@ export async function fetchList(id, fetcher = fetch) {
   const pb = `!1m4!1s${id}!2e1!3m1!1e1!2e2!3e2!4i500!16b1`;
   const url = `https://www.google.com/maps/preview/entitylist/getlist?authuser=0&hl=de&gl=de&pb=${encodeURIComponent(pb)}`;
   const res = await fetcher(url, { headers: { 'user-agent': UA, accept: '*/*' } });
+  if (res.status === 429 || res.status === 403) throw new Error('Google lässt den Abruf von Cloudflare aus gerade nicht zu');
   if (!res.ok) throw new Error(`Google antwortet mit ${res.status}`);
   const text = await res.text();
   return JSON.parse(text.replace(/^\)\]\}'\s*/, ''));
@@ -105,7 +106,7 @@ export async function syncTrip(env, trip, memberId, fetcher = fetch) {
   try {
     parsed = parseList(await fetchList(id, fetcher));
   } catch (e) {
-    throw new Error(`Die Liste ließ sich nicht lesen (${e.message}). Google hat vermutlich etwas geändert.`);
+    throw new Error(`Die Liste ließ sich nicht lesen: ${e.message}. Einzelne Orte gehen weiter per Link.`);
   }
   if (!parsed.places.length) throw new Error('In der Liste wurden keine Orte gefunden. Ist sie in Google Maps per Link geteilt?');
 

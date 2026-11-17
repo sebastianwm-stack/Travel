@@ -3,3 +3,5 @@ node_modules
 .dev.vars
 # Echte Reisedaten (Namen, Hotel, Flüge) gehören nicht in das öffentliche Repo
 private/
+# erzeugt von npm run build
+server/static-files.js

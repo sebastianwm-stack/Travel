@@ -1,23 +1,19 @@
-// Cloudflare Worker "reisebande": liefert die App aus public/ aus, /api/* beantwortet server/worker.js.
-// Aufbau wie Maré (period) und Tropfen (mobile-game), zusätzlich mit D1-Datenbank, KV für Dateien und Workers AI.
+// Cloudflare Worker "reisebande": /api/* beantwortet server/worker.js, die App aus public/ steckt im Worker selbst
+// (server/static-files.js, erzeugt von npm run build). Dazu D1-Datenbank, KV für Dateien und Workers AI.
+// Deploy: npm run deploy
 {
   "name": "reisebande",
   "main": "server/worker.js",
   "compatibility_date": "2026-11-16",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
-  },
-  // Gemeinsame Reisedaten. Ohne database_id legt Cloudflare die Datenbank beim ersten Deploy selbst an.
+  // Gemeinsame Reisedaten
   "d1_databases": [
-    { "binding": "DB", "database_name": "reisebande" }
+    { "binding": "DB", "database_name": "reisebande", "database_id": "ff3b95c4-3222-4f76-8e3e-73b819d004ea" }
   ],
   // Hochgeladene Fotos, PDFs und Tickets (bis 20 MB pro Datei)
   "kv_namespaces": [
-    { "binding": "FILES" }
+    { "binding": "FILES", "id": "4270aa0cbba747999aee628b402b5c9e" }
   ],
-  // Reisebegleiter (kostenloses Tageskontingent)
+  // Reiseberater (kostenloses Tageskontingent)
   "ai": { "binding": "AI" },
   // Öffentlicher Schlüssel für Web Push. Der private liegt als Secret VAPID_PRIVATE_JWK bei Cloudflare.
   "vars": {
@@ -26,5 +22,7 @@
   },
   // Jede Stunde prüfen, ob das Abendbriefing fällig ist
   "triggers": { "crons": ["7 * * * *"] },
+  "workers_dev": false,
+  "preview_urls": false,
   "observability": { "enabled": true }
 }

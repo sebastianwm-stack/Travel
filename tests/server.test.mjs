@@ -182,3 +182,11 @@ test('Bildsuche: Suchbegriffe und Auswahl', async () => {
   const r = await fromWikipedia({ title: 'High Line', lat: 40.748, lng: -74.0048 }, 'New York', fake);
   assert.equal(r.url, 'https://x/hl.jpg');
 });
+
+test('Schema lässt sich mehrfach ausführen (neue Isolates)', async () => {
+  const { SCHEMA } = await import('../server/schema.js');
+  const db = new DatabaseSync(':memory:');
+  const stmts = SCHEMA.split(';').map((s) => s.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').trim()).filter(Boolean);
+  for (let round = 0; round < 2; round++) for (const s of stmts) db.exec(s);
+  assert.ok(stmts.every((s) => /IF NOT EXISTS/.test(s)), 'jedes CREATE braucht IF NOT EXISTS');
+});
