@@ -511,3 +511,6 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 .home-row svg { width: 18px; height: 18px; flex: none; }
 .home-row.start::before { content: 'Start'; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--lime); }
 .home-row.end::before { content: 'Zurück'; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--lime); }
+
+.sw-cmt { font-size: 14px; line-height: 1.35; background: var(--soft); border-radius: 10px; padding: 6px 10px; overflow-wrap: anywhere; }
+.sw-cmt b { font-weight: 750; }

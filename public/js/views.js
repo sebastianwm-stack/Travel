@@ -38,7 +38,7 @@ export function viewToday() {
     body += next ? `<section class="block"><div class="block-h"><h2>Als Nächstes</h2></div>${stopCard(next)}</section>` : '';
     body += stops.length ? '' : empty('Heute ist noch frei', 'Holt euch was aus den Ideen oder lasst euch einen Vorschlag machen.', `<button class="btn primary" data-act="suggest" data-day="${ph.today}">${ICON.spark}Vorschlag für heute</button>`);
   } else if (ph.kind === 'after') {
-    h = hero({ pill: t.dest || t.name, title: 'Schön<br>war es.', sub: `${S.data.comments.length} Kommentare und ${Object.keys(S.data.files).length} Fotos und Dateien` });
+    h = hero({ pill: t.dest || t.name, title: 'Schön<br>war es.', sub: `${S.data.comments.length} Notizen und ${Object.keys(S.data.files).length} Fotos und Dateien` });
     body += storiesRow('Eure Tage zum Nachblättern');
   } else {
     const n = ph.days;

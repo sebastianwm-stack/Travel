@@ -69,7 +69,7 @@ function draw() {
       </div>`;
   } else {
     body = `<div class="tour-txt"><small>4 von 4</small><h2>Und sonst?</h2>
-      <p>Im Plan hat jeder Tag Notizen, jeder Ort Kommentare und Fotos. Und unten am Bildschirm hilft der Reiseberater, wenn du nicht weiterweißt.</p></div>
+      <p>Im Plan hat jeder Tag Notizen, jeder Ort Notizen und Fotos. Und unten am Bildschirm hilft der Reiseberater, wenn du nicht weiterweißt.</p></div>
       <button class="btn primary big" data-go>Los, Ideen swipen</button><button class="btn ghost wide" data-done>Erst mal umschauen</button>`;
   }
   el.innerHTML = `<div class="tour-in"><div class="tour-top"><span class="tour-dots">${dots}</span><button class="link" data-done>Überspringen</button></div>${body}</div>`;

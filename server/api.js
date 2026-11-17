@@ -353,6 +353,17 @@ export async function handleApi(request, env, url, ctx) {
     if (!text && !fileId) return fail(400, 'Leerer Kommentar.');
     const id = rid();
     await env.DB.prepare('INSERT INTO comments (id, trip_id, target, member_id, body, file_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id, trip.id, target, me.id, text, fileId, now).run();
+    // Die anderen bekommen eine Benachrichtigung (gleiche Unterhaltung ersetzt die vorige auf dem Gerät)
+    let where = 'an alle', link = '/#/heute';
+    if (target.startsWith('place:')) {
+      const pl = await env.DB.prepare('SELECT title FROM places WHERE id = ?').bind(target.slice(6)).first();
+      where = pl ? `zu ${pl.title}` : ''; link = '/#/ideen';
+    } else if (target.startsWith('day:')) {
+      const d = new Date(target.slice(4) + 'T12:00:00Z');
+      where = `zu ${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`; link = '/#/plan';
+    }
+    const send = pushToTrip(env, trip.id, { title: `${me.name} ${where}`.trim(), body: text ? text.slice(0, 180) : 'hat ein Foto geteilt', tag: `c-${target}`, url: link }, { exceptMember: me.id });
+    if (ctx?.waitUntil) ctx.waitUntil(send.catch(() => {})); else await send.catch(() => {});
     return json({ id });
   }
   if ((m = path.match(/^\/comments\/([a-z0-9]+)$/)) && method === 'DELETE') {

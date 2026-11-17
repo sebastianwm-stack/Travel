@@ -1,6 +1,6 @@
 // Ideen swipen: rechts = will ich (Herz), links = eher nicht. Wenn alle ein Herz vergeben haben: Match.
 import { esc, ICON, avatar, toast } from './ui.js';
-import { S, me, member, pool, heartsOf, iHeart, mutate, localHeart } from './state.js';
+import { S, me, member, pool, heartsOf, iHeart, mutate, localHeart, commentsOf } from './state.js';
 import { CATS } from './themes.js';
 import { register, areaOf, photo, mapsUrl } from './components.js';
 import { openPlace } from './sheets.js';
@@ -30,7 +30,9 @@ function cardHTML(p, depth) {
     <div class="sw-title"><h2>${esc(p.title)}</h2>${areaOf(p) ? `<p>${esc(areaOf(p))}</p>` : ''}
       <a class="gm" href="${mapsUrl(p)}" target="_blank" rel="noopener" data-stop>In Google Maps ansehen →</a></div>
     <div class="sw-body">
-      ${p.note ? `<p class="note">${esc(p.note)}</p>` : '<p class="hint">Noch keine Notiz.</p>'}
+      ${p.note ? `<p class="note">${esc(p.note)}</p>` : ''}
+      ${commentsOf(`place:${p.id}`).slice(-2).map((c) => `<p class="sw-cmt"><b>${esc(member(c.by)?.name || '')}:</b> ${esc(c.body || 'hat ein Foto geteilt')}</p>`).join('')}
+      ${!p.note && !commentsOf(`place:${p.id}`).length ? '<p class="hint">Noch keine Notiz. Über die Sprechblase unten kannst du eine schreiben.</p>' : ''}
       ${hs.length ? `<p class="who">${hs.map((m) => avatar(m)).join('')} ${hs.map((m) => esc(m.name)).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin</p>`
         : by && p.source !== 'import' ? `<p class="who">${avatar(by)} von ${esc(by.name)}</p>` : ''}
     </div>

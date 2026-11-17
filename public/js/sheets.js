@@ -8,10 +8,10 @@ import { CAT_NAMES } from './themes.js';
 import { searchPlaces } from './search.js';
 
 // ---------- Kommentare (für Orte, Tage, ganze Reise) ----------
-export function thread(target, { placeholder = 'Schreib was dazu …' } = {}) {
+export function thread(target, { placeholder = 'Notiz schreiben …' } = {}) {
   const list = commentsOf(target);
   return `<div class="thread" data-target="${esc(target)}">
-    ${list.map(commentHTML).join('') || '<p class="hint">Noch keine Kommentare.</p>'}
+    ${list.map(commentHTML).join('') || '<p class="hint">Noch keine Notizen. Die anderen bekommen eine Benachrichtigung, wenn du etwas schreibst.</p>'}
     <form class="composer" data-target="${esc(target)}">
       <label class="attach" title="Foto oder Datei anhängen">${ICON.clip}<input type="file" accept="image/*,application/pdf" hidden></label>
       <textarea rows="1" placeholder="${esc(placeholder)}" aria-label="Kommentar"></textarea>
@@ -116,7 +116,7 @@ export function openPlace(id) {
         <label class="switch"><input type="checkbox" data-booked ${p.booked ? 'checked' : ''}> Gebucht</label>
       </div>
 
-      <h4>Kommentare & Fotos</h4>
+      <h4>Notizen und Fotos</h4>
       ${thread(`place:${p.id}`)}
 
       <details class="edit"><summary>${ICON.edit} Bearbeiten</summary>

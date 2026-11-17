@@ -65,7 +65,7 @@ function draw() {
       </div>
       <div class="slide-act">
         <a class="btn" href="${routeUrl(p)}" target="_blank" rel="noopener" data-noflip>${ICON.route}Route</a>
-        <button class="btn" data-detail="${p.id}" data-noflip>${ICON.chat}${nc ? `${nc} Kommentare` : 'Details'}</button>
+        <button class="btn" data-detail="${p.id}" data-noflip>${ICON.chat}${nc ? `${nc} ${nc === 1 ? 'Notiz' : 'Notizen'}` : 'Details'}</button>
       </div></div>`;
   }
   el.style.setProperty('--sfg', fg);
