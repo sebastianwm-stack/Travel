@@ -19,7 +19,7 @@ export function similarity(a, b) {
   if (!A.size || !B.size) return 0;
   let hit = 0;
   A.forEach((w) => { if (B.has(w)) hit++; });
-  return hit / Math.min(A.size, B.size);
+  return hit / Math.max(A.size, B.size);
 }
 
 export class RateLimited extends Error {}
@@ -48,7 +48,7 @@ export function searchTerms(title) {
 
 // Wikipedia: passender Artikel mit Titelbild (keine Logos)
 // Allein zu allgemein, um ein passendes Bild zu finden ("Hotel" ergäbe irgendein Hotel)
-const GENERIC = new Set(['hotel', 'park', 'museum', 'market', 'bar', 'restaurant', 'cafe', 'shop', 'store', 'bridge', 'street', 'tour', 'pizza', 'burger', 'bagels', 'tacos', 'ramen']);
+const GENERIC = new Set(['hotel', 'park', 'museum', 'market', 'bar', 'restaurant', 'cafe', 'coffee', 'shop', 'store', 'bridge', 'street', 'tour', 'pizza', 'burger', 'bagels', 'tacos', 'ramen', 'village', 'plaza', 'brooklyn', 'manhattan']);
 const tooGeneric = (t) => { const w = words(t); return !w.length || (w.length === 1 && GENERIC.has(w[0])); };
 
 export async function fromWikipedia(place, dest, fetcher = fetch) {
@@ -60,7 +60,8 @@ export async function fromWikipedia(place, dest, fetcher = fetch) {
     const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages|coordinates&piprop=thumbnail&pithumbsize=900&colimit=5`;
     const data = await getJSON(url, fetcher);
     const pages = Object.values(data?.query?.pages || {})
-      .filter((p) => p.thumbnail?.source && !/\.svg/i.test(p.thumbnail.source))
+      // keine Logos, keine Artikel über frühere Bauten wie "1 World Trade Center (1970–2001)"
+      .filter((p) => p.thumbnail?.source && !/\.svg/i.test(p.thumbnail.source) && !/\(\d{4}/.test(p.title))
       .sort((a, b) => a.index - b.index);
     let best = null, bestScore = 0;
     for (const p of pages) {
@@ -68,10 +69,11 @@ export async function fromWikipedia(place, dest, fetcher = fetch) {
       const c = p.coordinates?.[0];
       const dist = c && Number.isFinite(place.lat) ? km(place, { lat: c.lat, lng: c.lon }) : null;
       if (dist !== null && dist > 25) continue; // anderer Ort gleichen Namens
+      // Ohne Koordinaten zählt nur ein genau passender Name, sonst muss der Artikel in der Nähe liegen
       let score = 0;
-      if (sim >= 0.99) score = 3;
-      else if (sim >= 0.5 && (dist === null || dist < 5)) score = 2;
-      else if (sim >= 0.34 && dist !== null && dist < 1.5) score = 1.5;
+      if (sim >= 0.99 && (dist === null || dist < 3)) score = 3;
+      else if (dist !== null && sim >= 0.5 && dist < 5) score = 2;
+      else if (dist !== null && sim >= 0.34 && dist < 1.5) score = 1.5;
       if (score > bestScore) { best = p; bestScore = score; }
     }
     if (best) return { url: best.thumbnail.source, credit: `Wikipedia: ${best.title}`, link: `https://en.wikipedia.org/?curid=${best.pageid}` };

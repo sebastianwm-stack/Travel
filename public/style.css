@@ -406,7 +406,7 @@ img.ph.broken { visibility: hidden; }
 .slide-ph::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 40px; background: linear-gradient(transparent, var(--bg)); }
 .slide.with-ph .slide-in { padding-top: 0; }
 .fav.has-ph { padding-top: 0; overflow: hidden; }
-.fav-ph { height: 84px; margin: 0 -14px 0; width: calc(100% + 28px); border-radius: 18px 18px 0 0; }
+img.ph.fav-ph { height: 84px; flex: none; margin: 0 -14px 0; width: calc(100% + 28px); border-radius: 18px 18px 0 0; }
 .fav.has-ph::before { display: none; }
 .fav.has-ph b { margin-top: 2px; }
 .sh-ph { margin: 0 -18px; height: 210px; position: relative; }

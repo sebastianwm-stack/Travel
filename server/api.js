@@ -277,7 +277,7 @@ export async function handleApi(request, env, url) {
         f.image_credit = img.startsWith('file:') ? JSON.stringify({ t: `Foto von ${me.name}` }) : img ? JSON.stringify(c || { t: new URL(img).hostname }) : '';
         f.image_tried = 1;
       }
-      if (b.imageTried) f.image_tried = 1;
+      if ('imageTried' in b) f.image_tried = b.imageTried ? 1 : 0;
       if ('lat' in b && 'lng' in b) { f.lat = num(b.lat); f.lng = num(b.lng); f.approx = 0; }
       f.updated_at = now;
       const keys = Object.keys(f);
