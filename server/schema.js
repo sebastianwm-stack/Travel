@@ -130,4 +130,6 @@ export const MIGRATIONS = [
   ['ALTER TABLE trips ADD COLUMN hotel TEXT'],
   // 3: Google Places: Schlüssel der Reise (nur auf dem Server), je Ort Place-ID, Auszug und ob schon gesucht
   ['ALTER TABLE trips ADD COLUMN gkey TEXT', 'ALTER TABLE places ADD COLUMN gplace TEXT', 'ALTER TABLE places ADD COLUMN ginfo TEXT', 'ALTER TABLE places ADD COLUMN gtried INTEGER NOT NULL DEFAULT 0'],
+  // 4: Kurzinfo je Ort (KI, einmal), Einordnung top/ok/meh, Versuche
+  ['ALTER TABLE places ADD COLUMN blurb TEXT', 'ALTER TABLE places ADD COLUMN blurb_v TEXT', 'ALTER TABLE places ADD COLUMN blurb_tries INTEGER NOT NULL DEFAULT 0'],
 ];

@@ -2,6 +2,7 @@
 // Jede Stunde prüft der Cron, ob irgendwo das Abendbriefing fällig ist (briefing.js).
 import { ensureSchema, fail } from './util.js';
 import { handleApi } from './api.js';
+import { dailyBlurbs } from './blurbs.js';
 import { runBriefings } from './briefing.js';
 
 const SECURITY = {
@@ -40,6 +41,6 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(ensureSchema(env.DB).then(() => runBriefings(env)));
+    ctx.waitUntil(ensureSchema(env.DB).then(() => Promise.all([runBriefings(env), dailyBlurbs(env).catch((e) => console.error('blurbs', e))])));
   },
 };

@@ -396,3 +396,39 @@ test('Google Places: Schlüssel prüfen, Orte zuordnen, Foto ausliefern, Schlüs
     assert.ok(calls.some((c) => c.includes('/places/ChIJjoe/photos/abc/media')));
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('Kurzinfos: einmal je Ort, Hausregeln im Text, ohne neue Orte kein KI-Aufruf', async () => {
+  const { writeBlurbs, dailyBlurbs, cleanBlurb } = await import('../server/blurbs.js');
+  const env = { DB: memoryD1(), FILES: new Map() };
+  const handle = (path, { method = 'GET', body, token } = {}) => worker.fetch(new Request(`http://x/api${path}`, {
+    method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined,
+  }), env);
+  const setup = await handle('/setup', { method: 'POST', body: { trip: { name: 'NYC', dest: 'New York', start: '2026-12-17', end: '2026-12-21' }, members: [{ key: 'S', name: 'Seb', role: 'admin' }], places: [
+    { title: "Joe's Pizza", area: 'West Village', cat: 'Essen', note: 'Anni: Klassiker' }, { title: 'High Line', cat: 'Natur' },
+  ] } });
+  const { links } = await setup.json();
+  let calls = 0;
+  env.AI = { run: async (model, input) => {
+    calls++;
+    const n = input.messages[1].content.split('\n').length;
+    return { response: { items: Array.from({ length: n }, (_, k) => ({ i: k + 1, text: k ? 'Alte Bahntrasse als Park – schön bei Sonnenuntergang.' : '„Der“ Klassiker für ein Stück Käsepizza auf die Hand, abends lange Schlange.', verdict: k ? 'top' : 'ok' })) } };
+  } };
+  const r = await writeBlurbs(env, {});
+  assert.equal(r.written, 2);
+  assert.equal(r.left, 0);
+  const state = await (await handle('/trip', { token: links[0].token })).json();
+  const hl = state.places.find((p) => p.title === 'High Line');
+  assert.equal(hl.blurbV, 'top');
+  assert.ok(!/[–—]/.test(hl.blurb), 'keine Gedankenstriche');
+  assert.ok(!/[„“]/.test(state.places.find((p) => p.title === "Joe's Pizza").blurb), 'gerade Anführungszeichen');
+  // nichts Neues: kein Aufruf, auch nicht am selben Tag nochmal
+  const before = calls;
+  await writeBlurbs(env, {});
+  assert.equal(calls, before);
+  const d1 = await dailyBlurbs(env, Date.parse('2026-11-19T07:00:00Z'));
+  const d2 = await dailyBlurbs(env, Date.parse('2026-11-19T08:00:00Z'));
+  assert.equal(d2.skipped, true);
+  assert.equal(d1.written, 0);
+  assert.equal(calls, before);
+  assert.equal(cleanBlurb('a'.repeat(300)).length <= 232, true);
+});

@@ -2,7 +2,7 @@
 import { esc, ICON, avatar, toast } from './ui.js';
 import { S, me, member, pool, heartsOf, iHeart, mutate, localHeart, commentsOf } from './state.js';
 import { CATS } from './themes.js';
-import { register, areaOf, photo, mapsUrl } from './components.js';
+import { register, areaOf, photo, mapsUrl, blurbHTML } from './components.js';
 import { openPlace } from './sheets.js';
 
 const nopeKey = () => `rb.nope.${S.data.me.id}`;
@@ -10,6 +10,11 @@ function nopes() { try { return new Set(JSON.parse(localStorage.getItem(nopeKey(
 function saveNopes(set) { try { localStorage.setItem(nopeKey(), JSON.stringify([...set])); } catch { /* egal */ } }
 
 // Noch nicht bewertete Ideen: ohne Tag, ohne mein Herz, nicht weggewischt
+// Auf der Karte ohne Links (z. B. "Weitere Filiale: https://…"), die stehen vollständig im Ort-Fenster
+// Neben der Kurzinfo nur Notizen von Leuten aus der Gruppe ("Anni: …"), keine Stichworte wie "Thai"
+const showNote = (p) => { const n = cardNote(p.note); return Boolean(n) && (!p.blurb || /^[A-ZÄÖÜ][\wäöüß]+: /.test(n)); };
+const cardNote = (n) => String(n || '').split('\n').filter((l) => !/^Weitere Filiale/.test(l)).join(' ').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+
 export function deck() {
   const no = nopes();
   return pool().filter((p) => !iHeart(p.id) && !no.has(p.id))
@@ -30,7 +35,8 @@ function cardHTML(p, depth) {
     <div class="sw-title"><h2>${esc(p.title)}</h2>${areaOf(p) ? `<p>${esc(areaOf(p))}</p>` : ''}
       <a class="gm" href="${mapsUrl(p)}" target="_blank" rel="noopener" data-stop>In Google Maps ansehen →</a></div>
     <div class="sw-body">
-      ${p.note ? `<p class="note">${esc(p.note)}</p>` : ''}
+      ${blurbHTML(p)}
+      ${showNote(p) ? `<p class="note">${esc(cardNote(p.note))}</p>` : ''}
       ${commentsOf(`place:${p.id}`).slice(-2).map((c) => `<p class="sw-cmt"><b>${esc(member(c.by)?.name || '')}:</b> ${esc(c.body || 'hat ein Foto geteilt')}</p>`).join('')}
       ${!p.note && !commentsOf(`place:${p.id}`).length ? '<p class="hint">Noch keine Notiz. Über die Sprechblase unten kannst du eine schreiben.</p>' : ''}
       ${hs.length ? `<p class="who">${hs.map((m) => avatar(m)).join('')} ${hs.map((m) => esc(m.name)).join(', ')} ${hs.length === 1 ? 'will' : 'wollen'} hin</p>`

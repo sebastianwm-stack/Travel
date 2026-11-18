@@ -139,6 +139,16 @@ export async function photoResponse(env, ctx, row) {
   return out;
 }
 
+// Googles Kurzbeschreibung und ein paar Bewertungen als Grundlage für die Kurzinfo (nicht gespeichert)
+export async function googleNotes(key, gplace) {
+  const g = await call(key, `places/${gplace}?languageCode=de`, { fields: 'editorialSummary,reviews' });
+  const out = [];
+  if (g.editorialSummary?.text) out.push(`Google-Beschreibung: ${g.editorialSummary.text}`);
+  const rv = (g.reviews || []).slice(0, 4).map((r) => (r.text?.text || r.originalText?.text || '').replace(/\s+/g, ' ').slice(0, 220)).filter(Boolean);
+  if (rv.length) out.push(`Aus Bewertungen: ${rv.join(' / ')}`);
+  return out.join(' | ');
+}
+
 // Schlüssel vor dem Speichern prüfen (ein günstiger Abruf)
 export async function testKey(key) {
   await call(key, 'places:searchText', { fields: 'places.id', body: { textQuery: 'Times Square New York', maxResultCount: 1 } });

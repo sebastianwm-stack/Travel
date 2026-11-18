@@ -6,6 +6,7 @@ import { suggestPlan, draftPlan, SLOTS } from './plan.js';
 import { routerFor, ttOf } from '../public/js/transit/index.js';
 import { frameOf } from '../public/js/frame.js';
 import { weatherFor, wetDays, weatherLoc } from './weather.js';
+import { writeBlurbs } from './blurbs.js';
 import { googleKey, validKeyFormat, testKey, fillPlaces, photoResponse, searchGoogle } from './google.js';
 import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
@@ -65,7 +66,7 @@ function placeOut(p) {
     id: p.id, title: p.title, area: p.area, cat: p.cat, note: p.note, lat: p.lat, lng: p.lng, approx: !!p.approx,
     slot: p.slot || null, url: p.url, image: p.image, imageCredit: safeJSON(p.image_credit || 'null', null), imageTried: !!p.image_tried, source: p.source, day: p.day, time: p.time, ord: p.ord, booked: !!p.booked, hours: p.hours,
     createdBy: p.created_by, createdAt: p.created_at, updatedAt: p.updated_at,
-    g: gOut(p), gTried: !!p.gtried,
+    g: gOut(p), gTried: !!p.gtried, blurb: p.blurb || null, blurbV: p.blurb_v || null,
   };
 }
 function gOut(p) {
@@ -350,6 +351,13 @@ export async function handleApi(request, env, url, ctx) {
     const added = await env.DB.prepare('INSERT OR IGNORE INTO hearts (place_id, member_id) SELECT id, ? FROM places WHERE id = ? AND trip_id = ? RETURNING place_id').bind(me.id, m[1], trip.id).first();
     if (!added) return fail(404, 'Ort nicht gefunden.');
     return json({ hearted: true });
+  }
+
+  // --- Kurzinfos von Hand anstoßen (Reiseleitung), sonst läuft das einmal am Tag ---
+  if (path === '/blurbs/run' && method === 'POST') {
+    if (!isAdmin) return fail(403, 'Nur die Reiseleitung kann das.');
+    const debug = url.searchParams.get('debug') ? [] : null;
+    return json({ ...(await writeBlurbs(env, { limit: 18, tripId: trip.id, debug })), ...(debug ? { debug } : {}) });
   }
 
   // --- Google: Daten nachholen, Suche ---

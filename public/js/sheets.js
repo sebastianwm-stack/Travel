@@ -2,7 +2,7 @@
 import { esc, linkify, ICON, avatar, openSheet, closeSheet, toast, fmtChip, fmtShort, ago } from './ui.js';
 import { api, fileUrl } from './api.js';
 import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf, localPlace, localHeart, matchPlaces } from './state.js';
-import { sticker, avatars, routeUrl, register, photo, resolveImages, mapsUrl } from './components.js';
+import { sticker, avatars, routeUrl, register, photo, resolveImages, mapsUrl, blurbHTML } from './components.js';
 import { findImage } from './images.js';
 import { CAT_NAMES } from './themes.js';
 import { searchPlaces } from './search.js';
@@ -114,6 +114,7 @@ export function openPlace(id) {
       <h2>${esc(p.title)}</h2>
       ${p.area ? `<p class="ar">${esc(p.area)}</p>` : ''}
       ${googleFacts(p)}
+      ${p.blurb ? `${blurbHTML(p, 'big')}<p class="ki-src">Kurzinfo von der KI, aus Notizen${p.g ? ' und Google' : ''}. Kann danebenliegen.</p>` : ''}
       ${p.note ? `<p class="note big">${linkify(p.note)}</p>` : ''}
       <div class="row-btns">
         <button class="btn heartbtn ${mine ? 'on' : ''}" data-h>${mine ? ICON.heartFill : ICON.heart}${mine ? 'Gemerkt' : 'Will ich'}</button>

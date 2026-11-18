@@ -90,6 +90,14 @@ export function stopCard(p, { walkAfter = '' } = {}) {
   </article>${walkAfter}`;
 }
 
+// Kurzinfo (KI) mit Einordnung
+const VERDICT = { top: 'Lohnt sich', ok: 'Wenn es passt', meh: 'Eher nicht' };
+export function blurbHTML(p, cls = '') {
+  if (!p.blurb) return '';
+  const v = VERDICT[p.blurbV] ? p.blurbV : 'ok';
+  return `<p class="blurb ${cls}"><span class="vd vd-${v}">${VERDICT[v]}</span> ${esc(p.blurb)}</p>`;
+}
+
 export function ideaCard(p) {
   const hs = heartsOf(p.id);
   const mine = iHeart(p.id);
@@ -101,6 +109,7 @@ export function ideaCard(p) {
       <div class="card-top">${sticker(p.cat)}${p.day ? `<span class="daytag">${fmtChip(p.day)}${p.time ? ' · ' + esc(p.time) : ''}</span>` : ''}</div>
       <h3 class="ti sm">${esc(p.title)}</h3>
       <p class="ar">${esc(p.area || '')}${by && p.source !== 'import' ? ` · von ${esc(by.name)}` : ''}</p>
+      ${blurbHTML(p, 'one')}
       <div class="ft">${avatars(hs)}${nc ? `<span class="cnt">${ICON.chat}${nc}</span>` : ''}</div>
     </div>
     <button class="heart ${mine ? 'on' : ''}" data-act="toggleHeart" data-id="${p.id}" aria-pressed="${mine}" aria-label="${mine ? 'Herz entfernen' : 'Herz geben'}">${mine ? ICON.heartFill : ICON.heart}<span>${hs.length || ''}</span></button>
