@@ -269,10 +269,29 @@ async function boot() {
 function showIntro() { maybeTour(); }
 
 // Bilder für Orte im Hintergrund suchen (im Browser, siehe images.js)
+// Google-Daten im Hintergrund nachholen (ein paar Orte pro Anfrage)
+let gRunning = false;
+async function googleFill() {
+  if (gRunning || !trip().google || !S.data.places.some((p) => !p.gTried)) return;
+  gRunning = true;
+  try {
+    for (let i = 0; i < 25; i++) {
+      const r = await api('/google/fill', { method: 'POST' });
+      if (r.error && !r.done) { if (me().role === 'admin') toast(`Google: ${r.error}`, 5000); break; }
+      if (!r.left) break;
+      if (i % 3 === 2) refresh().catch(() => {});
+    }
+  } catch { /* beim nächsten Öffnen weiter */ }
+  finally { gRunning = false; refresh().catch(() => {}); }
+}
+actions.googleFill = googleFill;
+
 function fillImagesLater() {
-  const missing = S.data.places.filter((p) => !p.image && !p.imageTried);
+  setTimeout(googleFill, 1200);
+  // Wikipedia nur für Orte, zu denen Google kein Foto hat (oder ohne Google)
+  const missing = S.data.places.filter((p) => !p.image && !p.imageTried && !p.g?.photo && (!trip().google || p.gTried));
   if (!missing.length) return;
-  setTimeout(() => autoFill(S.data.places, trip().dest, async (id, img) => {
+  setTimeout(() => autoFill(missing, trip().dest, async (id, img) => {
     await api(`/places/${id}`, { method: 'PATCH', body: img ? { image: img.url, imageCredit: { t: img.credit, l: img.link } } : { imageTried: true } }).catch(() => {});
   }).then(() => refresh().catch(() => {})), 1500);
 }

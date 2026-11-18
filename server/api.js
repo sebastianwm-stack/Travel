@@ -6,6 +6,7 @@ import { suggestPlan, draftPlan, SLOTS } from './plan.js';
 import { routerFor, ttOf } from '../public/js/transit/index.js';
 import { frameOf } from '../public/js/frame.js';
 import { weatherFor, wetDays, weatherLoc } from './weather.js';
+import { googleKey, validKeyFormat, testKey, fillPlaces, photoResponse, searchGoogle } from './google.js';
 import { syncTrip, resolveUrl, importList, parseList, listIdFromUrl } from './maps.js';
 import { ask, askStream } from './ai.js';
 import { briefingFor } from './briefing.js';
@@ -20,7 +21,7 @@ async function body(request) {
 }
 
 // Person und Reise mit einer einzigen Abfrage (jede Datenbank-Runde kostet Zeit)
-const TRIP_COLS = ['id', 'name', 'dest', 'theme', 'start', 'end', 'tz', 'home_tz', 'maps_url', 'maps_synced_at', 'briefing_hour', 'last_briefing', 'created_at', 'hotel'];
+const TRIP_COLS = ['id', 'name', 'dest', 'theme', 'start', 'end', 'tz', 'home_tz', 'maps_url', 'maps_synced_at', 'briefing_hour', 'last_briefing', 'created_at', 'hotel', 'gkey'];
 const TRIP_JSON = `json_object(${TRIP_COLS.map((c) => `'${c}', t."${c}"`).join(', ')})`;
 async function auth(request, env, ctx) {
   const h = request.headers.get('authorization') || '';
@@ -56,7 +57,7 @@ async function loadState(env, trip) {
 
 function tripOut(trip) {
   const { id, name, dest, theme, start, end, tz, home_tz, maps_url, maps_synced_at, briefing_hour } = trip;
-  return { id, name, dest, theme, start, end, tz, homeTz: home_tz, mapsUrl: maps_url, mapsSyncedAt: maps_synced_at, briefingHour: briefing_hour, days: daysOf(trip), hotel: safeJSON(trip.hotel || 'null', null) };
+  return { id, name, dest, theme, start, end, tz, homeTz: home_tz, mapsUrl: maps_url, mapsSyncedAt: maps_synced_at, briefingHour: briefing_hour, days: daysOf(trip), hotel: safeJSON(trip.hotel || 'null', null), google: Boolean(trip.gkey || trip.genv) };
 }
 
 function placeOut(p) {
@@ -64,7 +65,13 @@ function placeOut(p) {
     id: p.id, title: p.title, area: p.area, cat: p.cat, note: p.note, lat: p.lat, lng: p.lng, approx: !!p.approx,
     slot: p.slot || null, url: p.url, image: p.image, imageCredit: safeJSON(p.image_credit || 'null', null), imageTried: !!p.image_tried, source: p.source, day: p.day, time: p.time, ord: p.ord, booked: !!p.booked, hours: p.hours,
     createdBy: p.created_by, createdAt: p.created_at, updatedAt: p.updated_at,
+    g: gOut(p), gTried: !!p.gtried,
   };
+}
+function gOut(p) {
+  const g = safeJSON(p.ginfo || 'null', null);
+  if (!g) return null;
+  return { rating: g.rating, n: g.n, hours: g.hours, web: g.web, maps: g.maps, photo: Boolean(g.photo), by: g.by, byUrl: g.byUrl, v: g.photo ? g.photo.slice(-8) : '' };
 }
 function itemOut(i) {
   return { id: i.id, kind: i.kind, title: i.title, note: i.note, data: safeJSON(i.data, {}), ord: i.ord };
@@ -148,6 +155,12 @@ export async function handleApi(request, env, url, ctx) {
   const path = url.pathname.replace(/^\/api/, '');
   const method = request.method;
 
+  let gm;
+  if ((gm = path.match(/^\/gphoto\/([a-z0-9]{8,20})$/)) && method === 'GET') {
+    const row = await env.DB.prepare('SELECT p.id, p.gplace, p.ginfo, t.gkey FROM places p JOIN trips t ON t.id = p.trip_id WHERE p.id = ? AND p.deleted = 0').bind(gm[1]).first();
+    if (!row) return new Response('', { status: 404 });
+    return photoResponse(env, ctx, row);
+  }
   if (path === '/status' && method === 'GET') {
     const any = await env.DB.prepare('SELECT COUNT(*) AS n FROM trips').first();
     return json({ setup: any.n > 0, push: pushReady(env), vapid: env.VAPID_PUBLIC || null, ai: Boolean(env.AI) });
@@ -207,12 +220,15 @@ export async function handleApi(request, env, url, ctx) {
     const targets = trips.filter((t) => listIdFromUrl(t.maps_url) === listId);
     const out = [];
     for (const t of targets) out.push({ trip: t.name, ...(await importList(env, t, parsed)) });
+    // neue Orte gleich mit Google-Daten versorgen
+    for (const t of targets) if (googleKey(env, t)) ctx?.waitUntil?.(fillPlaces(env, t, { limit: 20 }).catch(() => {}));
     return json({ ok: true, places: parsed.places.length, trips: out });
   }
 
   const session = await auth(request, env, ctx);
   if (!session) return fail(401, 'Dieser Link ist nicht mehr gültig.');
   const { me, trip } = session;
+  if (env.GOOGLE_PLACES_KEY) trip.genv = true;
   const isAdmin = me.role === 'admin';
   const now = Date.now();
   let m;
@@ -242,6 +258,13 @@ export async function handleApi(request, env, url, ctx) {
     if ('tz' in b) f.tz = str(b.tz, 60) || trip.tz;
     if ('mapsUrl' in b) f.maps_url = str(b.mapsUrl, 500);
     if ('briefingHour' in b && Number.isInteger(b.briefingHour) && b.briefingHour >= 0 && b.briefingHour <= 23) f.briefing_hour = b.briefingHour;
+    if ('gkey' in b) {
+      const k = String(b.gkey || '').trim();
+      if (k && !validKeyFormat(k)) return fail(400, 'Das sieht nicht nach einem Google-API-Schlüssel aus (beginnt mit AIza).');
+      if (k) { try { await testKey(k); } catch (e) { return fail(400, `Google lehnt den Schlüssel ab: ${e.message}`); } }
+      f.gkey = k || null;
+      if (k) await env.DB.prepare('UPDATE places SET gtried = 0 WHERE trip_id = ? AND gplace IS NULL').bind(trip.id).run();
+    }
     if ('hotel' in b) f.hotel = b.hotel && num(b.hotel.lat) !== null && num(b.hotel.lng) !== null ? JSON.stringify({ name: str(b.hotel.name, 120) || 'Unterkunft', lat: num(b.hotel.lat), lng: num(b.hotel.lng) }) : null;
     const keys = Object.keys(f);
     if (keys.length) await env.DB.prepare(`UPDATE trips SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).bind(...keys.map((k) => f[k]), trip.id).run();
@@ -276,7 +299,9 @@ export async function handleApi(request, env, url, ctx) {
     ).bind(id, trip.id, title, str(b.area, 120), b.cat ? validCat(b.cat) : guessCat(title + ' ' + (b.note || '')), str(b.note, 2000), num(b.lat ?? info.lat), num(b.lng ?? info.lng),
       str(info.url || b.url, 1000), b.link ? 'link' : 'manual', isDate(b.day) ? b.day : null, isTime(b.time) ? b.time : '', now, me.id, now, now).run();
     if (SLOTS.includes(b.slot) && isDate(b.day)) await env.DB.prepare('UPDATE places SET slot = ? WHERE id = ?').bind(b.slot, id).run();
+    if (typeof b.gplace === 'string' && /^[A-Za-z0-9_-]{10,300}$/.test(b.gplace)) await env.DB.prepare('UPDATE places SET gplace = ? WHERE id = ?').bind(b.gplace, id).run();
     await env.DB.prepare('INSERT OR IGNORE INTO hearts (place_id, member_id) VALUES (?, ?)').bind(id, me.id).run();
+    if (googleKey(env, trip)) ctx?.waitUntil?.(fillPlaces(env, trip, { ids: [id], limit: 1 }).catch(() => {}));
     return json({ id });
   }
 
@@ -325,6 +350,21 @@ export async function handleApi(request, env, url, ctx) {
     const added = await env.DB.prepare('INSERT OR IGNORE INTO hearts (place_id, member_id) SELECT id, ? FROM places WHERE id = ? AND trip_id = ? RETURNING place_id').bind(me.id, m[1], trip.id).first();
     if (!added) return fail(404, 'Ort nicht gefunden.');
     return json({ hearted: true });
+  }
+
+  // --- Google: Daten nachholen, Suche ---
+  if (path === '/google/fill' && method === 'POST') {
+    if (!googleKey(env, trip)) return fail(400, 'Noch kein Google-Schlüssel eingetragen.');
+    return json(await fillPlaces(env, trip, { limit: 12 }));
+  }
+  if (path === '/google/search' && method === 'GET') {
+    const key = googleKey(env, trip);
+    if (!key) return fail(400, 'Noch kein Google-Schlüssel eingetragen.');
+    const q = str(url.searchParams.get('q'), 120);
+    if (q.length < 2) return json({ results: [] });
+    const lat = num(url.searchParams.get('lat')), lng = num(url.searchParams.get('lng'));
+    try { return json({ results: await searchGoogle(key, q, lat !== null && lng !== null ? { lat, lng } : null) }); }
+    catch (e) { return fail(502, `Google-Suche: ${e.message}`); }
   }
 
   // --- Wetter je Reisetag ---

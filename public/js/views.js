@@ -2,7 +2,7 @@
 import { esc, ICON, avatar, fmtChip, fmtShort, weekday, dayNum, monthName, ago, toast, openSheet, closeSheet } from './ui.js';
 import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf, frame, matchPlaces } from './state.js';
 import { weatherInfo, weatherLine } from './weather.js';
-import { hero, stopCard, ideaCard, sticker, avatars, empty, register, photo, resolveImages } from './components.js';
+import { hero, stopCard, ideaCard, sticker, avatars, empty, register, photo, resolveImages, actions } from './components.js';
 import { showLink } from './sheets.js';
 import { storyRing, openStory } from './story.js';
 import { deck, swipeHTML, mountSwipe } from './swipe.js';
@@ -175,6 +175,34 @@ function ideasResults(list, q) {
   return `${q ? `<p class="hint">${list.length} ${list.length === 1 ? 'Treffer' : 'Treffer'} in allen Orten, auch geplanten.</p>` : ''}<div class="ideas">${list.slice(0, ui.limit).map(ideaCard).join('')}</div>${list.length > ui.limit ? `<button class="btn wide" data-act="moreIdeas">${list.length - ui.limit} weitere zeigen</button>` : ''}`;
 }
 
+// ---------- Google-Daten (Fotos, Öffnungszeiten, Bewertung, Suche) ----------
+const GC = 'https://console.cloud.google.com';
+function googleBlock() {
+  const t = trip();
+  const all = S.data.places.length;
+  if (t.google) {
+    const withG = S.data.places.filter((p) => p.g).length;
+    const withPh = S.data.places.filter((p) => p.g?.photo).length;
+    const open = S.data.places.filter((p) => !p.gTried).length;
+    return `<section class="block"><div class="block-h"><h2>Fotos und Öffnungszeiten</h2></div>
+      <p class="hint">Google ist verbunden. ${withG} von ${all} Orten gefunden, ${withPh} mit Foto.${open ? ` ${open} werden gerade noch gesucht.` : ''} Neue Orte bekommen ihre Daten automatisch.</p>
+      <div class="row-btns">${open ? `<button class="btn" data-act="googleFill">${ICON.refresh}Weiter suchen</button>` : ''}<button class="btn ghost" data-act="googleOff">Schlüssel entfernen</button></div></section>`;
+  }
+  return `<section class="block"><div class="block-h"><h2>Fotos und Öffnungszeiten</h2></div>
+    <p class="hint">Mit einem Google-Schlüssel bekommt jeder Ort sein Foto, Bewertung, Öffnungszeiten und Website, und die Suche beim Hinzufügen funktioniert wie in Google Maps. Für eure Orte bleibt das im kostenlosen Kontingent.</p>
+    <details class="edit"><summary>${ICON.plus} So geht's (ca. 5 Minuten)</summary>
+      <ol class="steps">
+        <li><span><a href="${GC}/projectcreate" target="_blank" rel="noopener">Projekt anlegen</a>, Name zum Beispiel "Reisebande".</span></li>
+        <li><span><a href="${GC}/billing" target="_blank" rel="noopener">Abrechnung</a> mit dem Projekt verknüpfen. Google will eine Kreditkarte, auch wenn nichts anfällt.</span></li>
+        <li><span><a href="${GC}/apis/library/places.googleapis.com" target="_blank" rel="noopener">Places API (New)</a> aktivieren.</span></li>
+        <li><span><a href="${GC}/apis/credentials" target="_blank" rel="noopener">Anmeldedaten</a>: Anmeldedaten erstellen, API-Schlüssel. Danach beim Schlüssel unter API-Einschränkungen nur "Places API (New)" erlauben.</span></li>
+        <li><span>Sicherheitsnetz: bei den <a href="${GC}/apis/api/places.googleapis.com/quotas" target="_blank" rel="noopener">Kontingenten</a> die Anfragen pro Tag auf etwa 300 begrenzen.</span></li>
+        <li><span>Den Schlüssel (beginnt mit AIza) hier einfügen. Er bleibt auf dem Server, die Handys sehen ihn nie.</span></li>
+      </ol>
+      <form class="form" data-gkey><label>Google-API-Schlüssel<input name="gkey" autocomplete="off" spellcheck="false" placeholder="AIza…" required></label><button class="btn primary">Verbinden</button></form>
+    </details></section>`;
+}
+
 // ---------- INFOS ----------
 const FLIGHT_DIR = { hin: 'Hinflug', rueck: 'Rückflug' };
 function itemSub(i) {
@@ -237,6 +265,8 @@ export function viewInfos() {
         ${isAdmin ? `<button class="btn sm" data-act="setHotel">${t.hotel ? 'Ändern' : 'Festlegen'}</button>` : ''}</div>
     </section>
 
+    ${isAdmin ? googleBlock() : ''}
+
     <section class="block"><div class="block-h"><h2>Die Bande</h2></div>
       <div class="members">${S.data.members.map((m) => `<div class="mem">${avatar(m)}<span><b>${esc(m.name)}</b><small>${m.role === 'admin' ? 'Reiseleitung' : !m.claimed ? 'wartet auf die Einladung' : m.lastSeen ? `zuletzt ${ago(m.lastSeen)}` : 'dabei'}</small></span>
         ${isAdmin && m.claimed && m.id !== me().id ? `<button class="btn sm ghost" data-act="relink" data-id="${m.id}" data-name="${esc(m.name)}" title="Falls das Handy weg ist">Neuer Link</button>` : ''}</div>`).join('')}</div>
@@ -294,6 +324,12 @@ export function mountView(root, name) {
     const f = Object.fromEntries(new FormData(e.target));
     f.briefingHour = Number(f.briefingHour);
     try { await mutate('/trip', { method: 'PATCH', body: f }); toast('Gespeichert'); } catch (err) { toast(err.message); }
+  });
+  root.querySelector('form[data-gkey]')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Prüfe …';
+    try { await mutate('/trip', { method: 'PATCH', body: { gkey: e.target.gkey.value.trim() } }); toast('Google ist verbunden. Die Fotos kommen nach und nach.'); actions.googleFill?.(); }
+    catch (err) { toast(err.message, 5000); btn.disabled = false; btn.textContent = 'Verbinden'; }
   });
   root.querySelectorAll('[data-kindsel]').forEach((sel) => sel.addEventListener('change', () => {
     sel.closest('form').querySelectorAll('fieldset[data-k]').forEach((f) => { const on = f.dataset.k === sel.value; f.disabled = !on; f.hidden = !on; });
@@ -368,6 +404,7 @@ register({
       try { await mutate('/trip', { method: 'PATCH', body: { hotel: { name: r.title, lat: r.lat, lng: r.lng } } }); closeSheet(); toast('Unterkunft gespeichert'); } catch (err) { toast(err.message); }
     });
   },
+  googleOff: async () => { if (!confirm('Google-Schlüssel entfernen? Fotos und Öffnungszeiten verschwinden dann.')) return; try { await mutate('/trip', { method: 'PATCH', body: { gkey: '' } }); } catch (err) { toast(err.message); } },
   delItem: async (el) => { if (!confirm('Eintrag entfernen?')) return; try { await mutate(`/items/${el.dataset.id}`, { method: 'DELETE' }); } catch (err) { toast(err.message); } },
   pushOn: async () => { try { await enablePush(); window.dispatchEvent(new Event('rb:render')); toast('Benachrichtigungen sind an'); } catch (e) { toast(e.message, 5000); } },
   pushOff: async () => { await disablePush(); window.dispatchEvent(new Event('rb:render')); },

@@ -348,3 +348,51 @@ test('Abendbriefing nennt Landung, Abfahrt zum Flughafen und Wetter', async () =
   const last = briefingFor(trip, [], '2026-12-21', { frame });
   assert.match(last.body, /Check-out bis 11:00, ab zum Flughafen um 14:15/);
 });
+
+test('Google Places: Schlüssel prüfen, Orte zuordnen, Foto ausliefern, Schlüssel bleibt geheim', async () => {
+  const env = { DB: memoryD1(), FILES: new Map() };
+  const handle = (e, path, { method = 'GET', body, token } = {}) => worker.fetch(new Request(`http://x/api${path}`, {
+    method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined,
+  }), e);
+  const setup = await handle(env, '/setup', { method: 'POST', body: { trip: { name: 'NYC', dest: 'New York', start: '2026-12-17', end: '2026-12-21' }, members: [{ key: 'S', name: 'Seb', role: 'admin' }], places: [
+    { title: "Joe's Pizza", area: 'West Village', lat: 40.7306, lng: -74.0021, cat: 'Essen' },
+    { title: 'Irgendwas Unbekanntes', lat: 40.70, lng: -73.90 },
+  ] } });
+  const { links } = await setup.json();
+  const token = links[0].token;
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/media?')) return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/jpeg' } });
+    if (opts.headers?.['x-goog-api-key'] !== 'AIzaTESTTESTTESTTESTTESTTESTTESTTEST123') return new Response(JSON.stringify({ error: { message: 'API key not valid' } }), { status: 400 });
+    const body = JSON.parse(opts.body || '{}');
+    if (/Joe/.test(body.textQuery || '')) return Response.json({ places: [{ id: 'ChIJjoe', displayName: { text: "Joe's Pizza" }, location: { latitude: 40.7306, longitude: -74.0022 }, rating: 4.5, userRatingCount: 12000, regularOpeningHours: { weekdayDescriptions: ['Montag: 10:00–02:00'] }, photos: [{ name: 'places/ChIJjoe/photos/abc', authorAttributions: [{ displayName: 'Ana' }] }] }] });
+    return Response.json({ places: [] });
+  };
+  const call = (path, init = {}) => handle(env, path, { ...init, token });
+  try {
+    let r = await call('/trip', { method: 'PATCH', body: { gkey: 'AIzaFALSCHFALSCHFALSCHFALSCHFALSCH12' } });
+    assert.equal(r.status, 400, 'falscher Schlüssel wird abgelehnt');
+    r = await call('/trip', { method: 'PATCH', body: { gkey: 'AIzaTESTTESTTESTTESTTESTTESTTESTTEST123' } });
+    assert.equal(r.status, 200);
+    r = await call('/google/fill', { method: 'POST' });
+    const fill = await r.json();
+    assert.equal(fill.left, 0);
+    const state = await (await call('/trip')).json();
+    assert.ok(!JSON.stringify(state).includes('AIzaTEST'), 'Schlüssel geht nie an die App');
+    assert.equal(state.trip.google, true);
+    const joe = state.places.find((p) => p.title === "Joe's Pizza");
+    assert.equal(joe.g.rating, 4.5);
+    assert.equal(joe.g.photo, true);
+    assert.equal(joe.g.by, 'Ana');
+    const other = state.places.find((p) => p.title === 'Irgendwas Unbekanntes');
+    assert.equal(other.g, null, 'kein falscher Treffer');
+    assert.equal(other.gTried, true);
+    const ph = await handle(env, `/gphoto/${joe.id}`, {});
+    assert.equal(ph.status, 200);
+    assert.equal(ph.headers.get('content-type'), 'image/jpeg');
+    assert.ok(calls.some((c) => c.includes('/places/ChIJjoe/photos/abc/media')));
+  } finally { globalThis.fetch = realFetch; }
+});

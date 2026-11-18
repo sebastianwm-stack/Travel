@@ -85,6 +85,22 @@ export function rerenderSheet() { if (current) current(); }
 export function keepOpen(draw) { current = draw; draw(); }
 
 // ---------- Ort ----------
+// Bewertung, Öffnungszeiten (am geplanten Tag, sonst heute), Website aus Google
+const WD_DE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+function googleFacts(p) {
+  const g = p.g;
+  if (!g || (!g.rating && !g.hours && !g.web)) return '';
+  const day = p.day || new Date().toISOString().slice(0, 10);
+  const wd = WD_DE[new Date(day + 'T12:00:00Z').getUTCDay()];
+  const line = g.hours?.find((h) => h.startsWith(wd));
+  const hours = line ? line.slice(wd.length + 1).trim() : '';
+  const bits = [
+    g.rating ? `<span class="g-rate">★ ${String(g.rating).replace('.', ',')}${g.n ? ` <small>(${g.n.toLocaleString('de-DE')})</small>` : ''}</span>` : '',
+    hours ? `<span>${p.day ? `${wd.slice(0, 2)}.` : 'Heute'} ${esc(hours)}</span>` : '',
+    g.web ? `<a href="${esc(g.web)}" target="_blank" rel="noopener">Website</a>` : '',
+  ].filter(Boolean);
+  return `<p class="g-facts">${bits.join('<i>·</i>')}</p>${g.hours ? `<details class="g-hours"><summary>Öffnungszeiten</summary><ul>${g.hours.map((h) => `<li>${esc(h)}</li>`).join('')}</ul></details>` : ''}`;
+}
 export function openPlace(id) {
   const draw = () => {
     const p = place(id);
@@ -94,9 +110,10 @@ export function openPlace(id) {
     const gmaps = mapsUrl(p);
     const sheet = openSheet(`
       <div class="sh-head">${sticker(p.cat)}<button class="icon" data-close aria-label="Schließen">${ICON.close}</button></div>
-      <figure class="sh-ph ${p.image ? '' : 'art'}">${photo(p)}${p.image && p.imageCredit?.t ? `<figcaption>${p.imageCredit.l ? `<a href="${esc(p.imageCredit.l)}" target="_blank" rel="noopener">Foto: ${esc(p.imageCredit.t)}</a>` : `Foto: ${esc(p.imageCredit.t)}`}</figcaption>` : ''}</figure>
+      <figure class="sh-ph ${p.image || p.g?.photo ? '' : 'art'}">${photo(p)}${p.g?.photo ? `<figcaption>${p.g.by ? `Foto: ${p.g.byUrl ? `<a href="${esc(p.g.byUrl)}" target="_blank" rel="noopener">${esc(p.g.by)}</a>` : esc(p.g.by)} · ` : ''}Google</figcaption>` : p.image && p.imageCredit?.t ? `<figcaption>${p.imageCredit.l ? `<a href="${esc(p.imageCredit.l)}" target="_blank" rel="noopener">Foto: ${esc(p.imageCredit.t)}</a>` : `Foto: ${esc(p.imageCredit.t)}`}</figcaption>` : ''}</figure>
       <h2>${esc(p.title)}</h2>
       ${p.area ? `<p class="ar">${esc(p.area)}</p>` : ''}
+      ${googleFacts(p)}
       ${p.note ? `<p class="note big">${linkify(p.note)}</p>` : ''}
       <div class="row-btns">
         <button class="btn heartbtn ${mine ? 'on' : ''}" data-h>${mine ? ICON.heartFill : ICON.heart}${mine ? 'Gemerkt' : 'Will ich'}</button>
@@ -220,7 +237,7 @@ export function openAddIdea({ day = null, slot = null } = {}) {
     draw(q); // eigene Orte sofort zeigen, Ortssuche kommt dazu
     timer = setTimeout(async () => {
       const mine = ++seq;
-      try { const r = await searchPlaces(q, near); if (mine === seq) { results = r; draw(q); } }
+      try { const r = trip().google ? await googleSearch(q, near) : await searchPlaces(q, near); if (mine === seq) { results = r; draw(q); } }
       catch (err) { if (mine === seq) { results = []; draw(q); } }
     }, 280);
   });
@@ -231,8 +248,16 @@ export function openAddIdea({ day = null, slot = null } = {}) {
     if (b.dataset.have) { closeSheet(); openPlace(b.dataset.have); return; }
     if (b.hasAttribute('data-link')) create({ link: q });
     else if (b.hasAttribute('data-free')) create({ title: q });
-    else { const r = results[Number(b.dataset.i)]; create({ title: r.title, area: r.area, lat: r.lat, lng: r.lng, cat: r.cat }); }
+    else { const r = results[Number(b.dataset.i)]; create({ title: r.title, area: r.area, lat: r.lat, lng: r.lng, cat: r.cat, ...(r.gplace ? { gplace: r.gplace } : {}) }); }
   });
+}
+
+// Suche über Google (auf dem Server, der Schlüssel bleibt dort); bei Fehlern die freie Suche
+async function googleSearch(q, near) {
+  try {
+    const qs = new URLSearchParams({ q, ...(near ? { lat: near.lat.toFixed(4), lng: near.lng.toFixed(4) } : {}) });
+    return (await api(`/google/search?${qs}`)).results;
+  } catch { return searchPlaces(q, near); }
 }
 
 // ---------- Reisebegleiter ----------

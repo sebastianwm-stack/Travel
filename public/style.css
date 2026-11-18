@@ -571,3 +571,12 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 .block-h small.muted { color: var(--mute); font-weight: 600; font-size: 12px; }
 .res-h { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--mute); margin: 6px 2px 0; }
 .res.mine { background: var(--soft); }
+
+/* Google-Daten im Ort-Fenster */
+.g-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; font-weight: 700; color: #3A3833; margin: 0; }
+.g-facts i { font-style: normal; color: var(--mute); }
+.g-facts small { font-weight: 600; color: var(--mute); }
+.g-rate { color: var(--ink); }
+.g-hours summary { font-size: 13px; font-weight: 700; color: var(--mute); cursor: pointer; }
+.g-hours ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #3A3833; }
+.steps { margin: 8px 0 12px; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; line-height: 1.45; }

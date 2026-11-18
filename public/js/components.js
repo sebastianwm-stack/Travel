@@ -51,7 +51,8 @@ export function photo(p, cls = '') {
   const c = CATS[p.cat] || CATS.Sehen;
   const art = `<span class="illus" style="--bgc:${c.bg}" role="img" aria-label="${alt}">${illusFor(p)}</span>`;
   let img = '';
-  if (p.image?.startsWith('file:')) img = `<img class="ph" data-file-img="${esc(p.image.slice(5))}" alt="${alt}">`;
+  if (p.g?.photo) img = `<img class="ph" src="/api/gphoto/${esc(p.id)}?v=${esc(p.g.v || '')}" alt="${alt}" loading="lazy" decoding="async">`;
+  else if (p.image?.startsWith('file:')) img = `<img class="ph" data-file-img="${esc(p.image.slice(5))}" alt="${alt}">`;
   else if (p.image) img = `<img class="ph" src="${esc(p.image)}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
   return `<span class="phw ${cls}">${art}${img}</span>`;
 }

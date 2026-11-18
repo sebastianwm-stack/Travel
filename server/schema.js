@@ -128,4 +128,6 @@ export const MIGRATIONS = [
   ['ALTER TABLE places ADD COLUMN slot TEXT'],
   // 2: Unterkunft als Anker auf der Karte, JSON { name, lat, lng }
   ['ALTER TABLE trips ADD COLUMN hotel TEXT'],
+  // 3: Google Places: Schlüssel der Reise (nur auf dem Server), je Ort Place-ID, Auszug und ob schon gesucht
+  ['ALTER TABLE trips ADD COLUMN gkey TEXT', 'ALTER TABLE places ADD COLUMN gplace TEXT', 'ALTER TABLE places ADD COLUMN ginfo TEXT', 'ALTER TABLE places ADD COLUMN gtried INTEGER NOT NULL DEFAULT 0'],
 ];
