@@ -1,7 +1,7 @@
 // Offline-Unterstützung: erst frisch aus dem Netz, im Funkloch aus dem Cache.
 // /api/ wird nicht zwischengespeichert (den letzten Reisestand hält die App selbst im localStorage),
 // außer den Fotos der Orte. Kartenkacheln und Fotos lädt "Für unterwegs speichern" (offline.js) vorab.
-const CACHE = 'reisebande-v10';
+const CACHE = 'reisebande-v11';
 const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/js/illus.js', '/js/search.js', '/js/tour.js', '/js/transit/index.js', '/js/transit/router.js', '/js/transit/nyc.js', '/js/frame.js', '/js/drag.js', '/js/offline.js', '/js/weather.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
 
 self.addEventListener('install', (e) => {
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   // Fotos der Orte (Google über unseren Server, Wikipedia): einmal laden, dann aus dem Speicher
-  if (url.pathname.startsWith('/api/gphoto/') || url.hostname === 'upload.wikimedia.org') {
+  if (url.pathname.startsWith('/api/gphoto/') || url.hostname === 'upload.wikimedia.org' || url.hostname === 'thumb.wikimedia.org') {
     e.respondWith((async () => {
       const cache = await caches.open('photos-v1');
       const hit = await cache.match(req, { ignoreVary: true });

@@ -9,7 +9,7 @@ const SECURITY = {
   'referrer-policy': 'strict-origin-when-cross-origin',
   'x-content-type-options': 'nosniff',
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
-  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://en.wikipedia.org https://commons.wikimedia.org https://tiles.openfreemap.org https://photon.komoot.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'",
+  'content-security-policy': "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://en.wikipedia.org https://commons.wikimedia.org https://upload.wikimedia.org https://thumb.wikimedia.org https://tiles.openfreemap.org https://photon.komoot.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'",
 };
 
 let staticFiles = null;
