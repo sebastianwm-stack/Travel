@@ -9,6 +9,7 @@ import { thread, mountThread, openPlace, keepOpen } from './sheets.js';
 import { loadMapLib, baseMap, addPin, addRoute, addHome, hasCoords } from './map.js';
 import { routerFor } from './transit/index.js';
 import { daySlots } from './frame.js';
+import { mountDrag } from './drag.js';
 import { weatherLine, weatherInfo } from './weather.js';
 
 export const planUi = { day: null, mode: 'ablauf', draft: null, stamp: '', loading: false, alt: {}, skip: new Set() };
@@ -102,6 +103,38 @@ function suggestionFor(d, slot) {
   return { p: list[(planUi.alt[key] || 0) % list.length], n: list.length };
 }
 
+// ---------- Verschieben per Ziehen ----------
+// In einen Abschnitt (mit Reihenfolge) oder auf einen anderen Tag. Eine Uhrzeit, die nicht zum neuen
+// Abschnitt passt, fällt weg; bei gebuchten Stopps wird vorher gefragt.
+async function dropStop({ id, kind, day, slot, index }) {
+  const p = place(id);
+  if (!p) return;
+  if (kind === 'day') {
+    if (day === p.day) return;
+    if (p.booked && p.time && !confirm(`${p.title} ist für ${p.time} Uhr gebucht. Trotzdem auf einen anderen Tag legen?`)) return;
+    const mv = { id, day, slot: slotOf(p), time: p.time || '', ord: Date.now() };
+    await applyMoves([mv], `Auf ${weekday(day)} verschoben`);
+    return;
+  }
+  const toSlot = slot || null;
+  const keepTime = p.time && (!toSlot || slotOfTimeH(p.time) === toSlot);
+  if (p.time && !keepTime && p.booked && !confirm(`${p.title} ist für ${p.time} Uhr gebucht. Die Uhrzeit passt nicht zum neuen Abschnitt und wird entfernt. Trotzdem verschieben?`)) return;
+  const same = stopsOf(day).filter((x) => x.id !== id && (slotOf(x) || null) === toSlot);
+  same.splice(Math.min(index ?? same.length, same.length), 0, p);
+  const moves = same.map((x, i) => ({ id: x.id, day, slot: toSlot, time: x.id === id ? (keepTime ? p.time : '') : (x.time || ''), ord: i + 1 }));
+  const changed = (slotOf(p) || null) !== toSlot || p.day !== day;
+  await applyMoves(moves, changed ? (toSlot ? `Jetzt: ${SLOT_LABEL[toSlot]}` : 'Ohne festen Abschnitt') : '');
+}
+const slotOfTimeH = (t) => { const [h, m] = t.split(':').map(Number); const x = h + m / 60; return x < 10.5 ? 'frueh' : x < 12 ? 'vormittag' : x < 14.5 ? 'mittag' : x < 17.5 ? 'nachmittag' : 'abend'; };
+async function applyMoves(moves, msg) {
+  try {
+    await mutate('/plan/apply', { method: 'POST', body: { moves } }, (d) => {
+      for (const mv of moves) { const x = d.places.find((q) => q.id === mv.id); if (x) Object.assign(x, { day: mv.day, slot: mv.slot, time: mv.time, ord: mv.ord }); }
+    });
+    if (msg) toast(msg);
+  } catch (e) { toast(e.message); }
+}
+
 // ---------- Wege zwischen den Stopps (U-Bahn-Fahrplan, sonst nichts) ----------
 let router = { trip: null, r: null, loading: false };
 function ensureRouter() {
@@ -129,12 +162,14 @@ function leg(a, b, d, sug = false) {
   return `<div class="leg ${sug ? 'to-sug' : ''} ${r.min >= 45 ? 'long' : ''}">${first}${other ? `<span class="leg-alt"><em>oder</em>${other}</span>` : ''}</div>`;
 }
 
+const GRIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></g></svg>';
 function rowCard(p) {
   const hs = heartsOf(p.id);
   return `<article class="row-card ${p.booked ? 'booked' : ''}" data-act="openPlace" data-id="${p.id}" tabindex="0">
     <div class="rc-ph">${photo(p)}</div>
     <div class="rc-main"><b>${esc(p.title)}</b><span class="ar">${esc([p.time, areaOf(p)].filter(Boolean).join(' · '))}</span>
       <span class="rc-ft">${sticker(p.cat, 'sm')}${p.booked ? '<span class="okmini">gebucht</span>' : ''}${avatars(hs, 'xs')}</span></div>
+    <button class="drag-h" data-drag="${p.id}" data-stop aria-label="${esc(p.title)} verschieben" title="Ziehen zum Verschieben">${GRIP}</button>
   </article>`;
 }
 
@@ -171,7 +206,7 @@ function ablauf(d) {
         body = `<p class="slot-free">${planUi.loading && !planUi.draft ? 'Suche Vorschläge …' : 'Frei. Zeit zum Treibenlassen.'}</p>`;
       }
     }
-    return `<section class="slot ${here.length ? 'filled' : ''}"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${SLOT_IC[slot]}</span><h3>${SLOT_LABEL[slot]}</h3>
+    return `<section class="slot ${here.length ? 'filled' : ''}" data-slot="${slot}" data-day="${d}"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${SLOT_IC[slot]}</span><h3>${SLOT_LABEL[slot]}</h3>
       <button class="slot-add" data-act="addIdea" data-day="${d}" data-slot="${slot}" aria-label="Ort für ${SLOT_LABEL[slot]} hinzufügen">${ICON.plus}</button></div>${body}</section>`;
   }).join('');
   const back = t.hotel ? leg(last, t.hotel, d) : '';
@@ -192,11 +227,11 @@ function ablauf(d) {
   return `${hint}
     ${anySug ? `<button class="btn primary wide" data-act="sugTakeAll" data-day="${d}">${ICON.check}Alle Vorschläge für ${weekday(d)} übernehmen</button>` : ''}
     <div class="slots">${startRow}${sections}${endRow}</div>
-    ${loose.length ? `<section class="slot"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${I('<circle cx="12" cy="12" r="3"/>')}</span><h3>Irgendwann</h3></div>${loose.map(rowCard).join('')}</section>` : ''}`;
+    ${loose.length ? `<section class="slot" data-slot="" data-day="${d}"><div class="slot-h"><span class="slot-ic" aria-hidden="true">${I('<circle cx="12" cy="12" r="3"/>')}</span><h3>Irgendwann</h3></div>${loose.map(rowCard).join('')}</section>` : ''}`;
 }
 
 export async function mountPlan(root) {
-  if (planUi.mode !== 'karte') return;
+  if (planUi.mode !== 'karte') { mountDrag(root, dropStop); return; }
   const el = root.querySelector('#map');
   if (!el) return;
   let ml;
