@@ -1,7 +1,7 @@
 // Bottom-Sheets: Ort im Detail, neue Idee, Reisebegleiter, Tagesvorschlag, Einladungslink.
 import { esc, linkify, ICON, avatar, openSheet, closeSheet, toast, fmtChip, fmtShort, ago } from './ui.js';
 import { api, fileUrl } from './api.js';
-import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf, localPlace, localHeart } from './state.js';
+import { S, mutate, place, heartsOf, iHeart, commentsOf, member, me, trip, refresh, SLOTS, SLOT_LABEL, slotOf, localPlace, localHeart, matchPlaces } from './state.js';
 import { sticker, avatars, routeUrl, register, photo, resolveImages, mapsUrl } from './components.js';
 import { findImage } from './images.js';
 import { CAT_NAMES } from './themes.js';
@@ -209,13 +209,15 @@ export function openAddIdea({ day = null, slot = null } = {}) {
   const draw = (q) => {
     const isLink = /^https?:\/\//.test(q);
     if (isLink) { box.innerHTML = `<button class="res" data-link>${ICON.link}<span><b>Link übernehmen</b><small>${esc(q.slice(0, 60))}</small></span></button>`; return; }
-    box.innerHTML = results.map((r, i) => `<button class="res" data-i="${i}">${sticker(r.cat, 'sm')}<span><b>${esc(r.title)}</b><small>${esc(r.address || r.area)}</small></span></button>`).join('')
+    const mine = q.length > 1 ? matchPlaces(q).slice(0, 4) : [];
+    box.innerHTML = (mine.length ? `<p class="res-h">Schon bei euch</p>${mine.map((p) => `<button class="res mine" data-have="${p.id}">${sticker(p.cat, 'sm')}<span><b>${esc(p.title)}</b><small>${esc([p.area, p.day ? 'geplant' : 'in den Ideen'].filter(Boolean).join(' · '))}</small></span></button>`).join('')}${results.length ? '<p class="res-h">Neu hinzufügen</p>' : ''}` : '') + results.map((r, i) => `<button class="res" data-i="${i}">${sticker(r.cat, 'sm')}<span><b>${esc(r.title)}</b><small>${esc(r.address || r.area)}</small></span></button>`).join('')
       + (q.length > 1 ? `<button class="res plain" data-free>${ICON.plus}<span><b>"${esc(q)}" ohne genaue Lage hinzufügen</b></span></button>` : '');
   };
   input.addEventListener('input', () => {
     const q = input.value.trim();
     clearTimeout(timer);
     if (/^https?:\/\//.test(q) || q.length < 2) { results = []; draw(q); return; }
+    draw(q); // eigene Orte sofort zeigen, Ortssuche kommt dazu
     timer = setTimeout(async () => {
       const mine = ++seq;
       try { const r = await searchPlaces(q, near); if (mine === seq) { results = r; draw(q); } }
@@ -226,6 +228,7 @@ export function openAddIdea({ day = null, slot = null } = {}) {
     const b = e.target.closest('button');
     if (!b) return;
     const q = input.value.trim();
+    if (b.dataset.have) { closeSheet(); openPlace(b.dataset.have); return; }
     if (b.hasAttribute('data-link')) create({ link: q });
     else if (b.hasAttribute('data-free')) create({ title: q });
     else { const r = results[Number(b.dataset.i)]; create({ title: r.title, area: r.area, lat: r.lat, lng: r.lng, cat: r.cat }); }

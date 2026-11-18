@@ -1,6 +1,6 @@
 // Hauptansichten: Heute, Ideen, Infos. Der Plan liegt in plan.js. Klicks laufen über data-act.
 import { esc, ICON, avatar, fmtChip, fmtShort, weekday, dayNum, monthName, ago, toast, openSheet, closeSheet } from './ui.js';
-import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf, frame } from './state.js';
+import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf, frame, matchPlaces } from './state.js';
 import { weatherInfo, weatherLine } from './weather.js';
 import { hero, stopCard, ideaCard, sticker, avatars, empty, register, photo, resolveImages } from './components.js';
 import { showLink } from './sheets.js';
@@ -148,9 +148,7 @@ export function viewIdeas() {
   const base = ui.onlyOpen ? all.filter((p) => !p.day) : all;
   const q = ui.q.trim().toLowerCase();
   const counts = Object.fromEntries(CAT_NAMES.map((c) => [c, base.filter((p) => p.cat === c).length]));
-  let list = base.filter((p) => (ui.cat === 'Alle' || (ui.cat === 'Meine' ? heartsOf(p.id).some((m) => m.id === me().id) : p.cat === ui.cat)));
-  if (q) list = list.filter((p) => `${p.title} ${p.area} ${p.note}`.toLowerCase().includes(q));
-  list.sort((a, b) => heartsOf(b.id).length - heartsOf(a.id).length || a.title.localeCompare(b.title, 'de'));
+  const list = ideasList(base);
   const synced = t.mapsSyncedAt ? `zuletzt ${ago(t.mapsSyncedAt)}` : 'noch nie abgeglichen';
   return `${top}
     <div class="page">
@@ -161,9 +159,20 @@ export function viewIdeas() {
         ${CAT_NAMES.filter((c) => counts[c]).map((c) => `<button class="chip cat ${ui.cat === c ? 'on' : ''}" style="--c:${CATS[c].bg}" data-act="pickCat" data-cat="${c}">${c}<small>${counts[c]}</small></button>`).join('')}
       </div>
       <label class="switch small"><input type="checkbox" data-act="toggleOpen" ${ui.onlyOpen ? 'checked' : ''}> Nur Ideen ohne Tag</label>
-      ${list.length ? `<div class="ideas">${list.slice(0, ui.limit).map(ideaCard).join('')}</div>${list.length > ui.limit ? `<button class="btn wide" data-act="moreIdeas">${list.length - ui.limit} weitere zeigen</button>` : ''}` : empty('Nichts gefunden', q ? 'Versuch einen anderen Suchbegriff.' : 'Hier landen alle Orte, die noch keinen Tag haben.')}
+      <div data-results>${ideasResults(list, q)}</div>
       ${t.mapsSyncedAt ? `<p class="foot">Neue Orte aus eurer Google-Maps-Liste kommen automatisch dazu. Zuletzt ${ago(t.mapsSyncedAt)}.</p>` : ''}
     </div>${askBar()}`;
+}
+
+// Liste für "Alle": beim Suchen über alle Orte (auch geplante, jede Kategorie), sonst nach Filter
+function ideasList(base) {
+  if (ui.q.trim()) return matchPlaces(ui.q);
+  return base.filter((p) => (ui.cat === 'Alle' || (ui.cat === 'Meine' ? heartsOf(p.id).some((m) => m.id === me().id) : p.cat === ui.cat)))
+    .sort((a, b) => heartsOf(b.id).length - heartsOf(a.id).length || a.title.localeCompare(b.title, 'de'));
+}
+function ideasResults(list, q) {
+  if (!list.length) return empty('Nichts gefunden', q ? 'Nichts in euren Orten. Über das Plus oben suchst du in ganz New York und legst den Ort neu an.' : 'Hier landen alle Orte, die noch keinen Tag haben.');
+  return `${q ? `<p class="hint">${list.length} ${list.length === 1 ? 'Treffer' : 'Treffer'} in allen Orten, auch geplanten.</p>` : ''}<div class="ideas">${list.slice(0, ui.limit).map(ideaCard).join('')}</div>${list.length > ui.limit ? `<button class="btn wide" data-act="moreIdeas">${list.length - ui.limit} weitere zeigen</button>` : ''}`;
 }
 
 // ---------- INFOS ----------
@@ -267,7 +276,15 @@ export function mountView(root, name) {
   resolveImages(root);
   if (name === 'ideen') mountSwipe(root);
   const search = root.querySelector('[data-search]');
-  if (search) search.addEventListener('input', () => { ui.q = search.value; window.dispatchEvent(new Event('rb:render')); });
+  // beim Tippen nur die Treffer neu zeichnen, nicht das Suchfeld (sonst schließt sich auf dem iPhone die Tastatur)
+  if (search) search.addEventListener('input', () => {
+    ui.q = search.value;
+    const box = root.querySelector('[data-results]');
+    if (!box) return;
+    const base = ui.onlyOpen ? S.data.places.filter((p) => !p.day) : S.data.places;
+    box.innerHTML = ideasResults(ideasList(base), ui.q.trim());
+    resolveImages(box);
+  });
   root.querySelector('form[data-me]')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     try { await mutate('/me', { method: 'PATCH', body: Object.fromEntries(new FormData(e.target)) }); toast('Gespeichert'); } catch (err) { toast(err.message); }

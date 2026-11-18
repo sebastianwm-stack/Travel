@@ -54,6 +54,23 @@ export const localHeart = (id) => (d) => {
   if (i >= 0) d.hearts.splice(i, 1); else d.hearts.push([id, me]);
 };
 
+// ---------- Suche in den eigenen Orten ----------
+// unempfindlich für Groß/klein, Akzente, Apostrophe und Wortreihenfolge
+export const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/['’‘`´]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+export function matchPlaces(q, places = S.data.places) {
+  const words = norm(q).split(' ').filter(Boolean);
+  if (!words.length) return [];
+  const out = [];
+  for (const p of places) {
+    const title = norm(p.title), rest = norm(`${p.area} ${p.note} ${p.cat}`);
+    const glued = title.replace(/ /g, '');
+    if (!words.every((w) => title.includes(w) || rest.includes(w) || glued.includes(w))) continue;
+    const score = (title.startsWith(words[0]) ? 3 : 0) + words.filter((w) => title.includes(w) || glued.includes(w)).length * 2 + (p.day ? 0 : 0.5);
+    out.push([score, p]);
+  }
+  return out.sort((a, b) => b[0] - a[0] || a[1].title.localeCompare(b[1].title, 'de')).map(([, p]) => p);
+}
+
 // ---------- Ableitungen ----------
 // Anreise und Abreise aus den Flugdaten (Landung, Hotel, Check-out, ab zum Flughafen)
 export const frame = () => frameOf(S.data.trip, S.data.items);
