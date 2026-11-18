@@ -77,13 +77,16 @@ export const frame = () => frameOf(S.data.trip, S.data.items);
 
 // Wetter je Reisetag: einmal laden, nach drei Stunden neu
 const wx = { trip: null, at: 0, days: {}, loading: false };
+const WXKEY = (id) => `rb.wx.${id}`;
 export function weatherOf(day) {
   const t = S.data.trip;
+  // zuletzt gesehenes Wetter aus dem Speicher, falls gerade kein Netz da ist
+  if (wx.trip !== t.id && !wx.loading) { try { const c = JSON.parse(localStorage.getItem(WXKEY(t.id)) || 'null'); if (c) Object.assign(wx, { trip: t.id, at: 0, days: c }); } catch { /* egal */ } }
   if ((wx.trip !== t.id || Date.now() - wx.at > 3 * 3600e3) && !wx.loading) {
     wx.loading = true;
     api('/weather')
-      .then((r) => { Object.assign(wx, { trip: t.id, at: Date.now(), days: r.days || {} }); window.dispatchEvent(new Event('rb:render')); })
-      .catch(() => { Object.assign(wx, { trip: t.id, at: Date.now() }); })
+      .then((r) => { Object.assign(wx, { trip: t.id, at: Date.now(), days: r.days || {} }); try { localStorage.setItem(WXKEY(t.id), JSON.stringify(wx.days)); } catch { /* egal */ } window.dispatchEvent(new Event('rb:render')); })
+      .catch(() => { Object.assign(wx, { trip: t.id, at: Date.now() - 3 * 3600e3 + 5 * 60e3 }); })
       .finally(() => { wx.loading = false; });
   }
   return wx.trip === t.id ? wx.days[day] || null : null;

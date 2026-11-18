@@ -86,11 +86,13 @@ const stampOf = () => S.data.places.map((p) => `${p.id}${p.day || ''}${p.slot ||
 function ensureDraft() {
   const st = stampOf();
   if (planUi.stamp === st || planUi.loading) return;
+  // nach einem Fehlschlag (z. B. kein Netz) erst nach einer Minute wieder versuchen, sonst Endlosschleife
+  if (planUi.failedAt && Date.now() - planUi.failedAt < 60e3) return;
   planUi.loading = true;
   api('/plan/draft', { method: 'POST', body: {} })
-    .then((r) => { planUi.draft = r.draft; planUi.stamp = st; planUi.alt = {}; })
-    .catch(() => {})
-    .finally(() => { planUi.loading = false; window.dispatchEvent(new Event('rb:render')); });
+    .then((r) => { planUi.draft = r.draft; planUi.stamp = st; planUi.alt = {}; planUi.failedAt = 0; window.dispatchEvent(new Event('rb:render')); })
+    .catch(() => { planUi.failedAt = Date.now(); })
+    .finally(() => { planUi.loading = false; });
 }
 // Aktueller Vorschlag für einen Abschnitt (mit "Andere" durchblättern)
 function suggestionFor(d, slot) {

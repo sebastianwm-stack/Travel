@@ -2,6 +2,7 @@
 import { esc, ICON, avatar, fmtChip, fmtShort, weekday, dayNum, monthName, ago, toast, openSheet, closeSheet } from './ui.js';
 import { S, trip, me, member, place, stopsOf, pool, phase, heartsOf, mutate, commentsOf, frame, matchPlaces } from './state.js';
 import { weatherInfo, weatherLine } from './weather.js';
+import { saveOffline, offlineInfo, offlineSupported } from './offline.js';
 import { hero, stopCard, ideaCard, sticker, avatars, empty, register, photo, resolveImages, actions } from './components.js';
 import { showLink } from './sheets.js';
 import { storyRing, openStory } from './story.js';
@@ -35,6 +36,7 @@ export function viewToday() {
       badge: next ? `Gleich: ${next.time} ${shortTitle(next.title).split(' ').slice(0, 3).join(' ')}` : '',
     });
     body += todayFrame(ph.today);
+    body += offlineHint();
     body += storiesRow();
     body += announceBlock();
     body += next ? `<section class="block"><div class="block-h"><h2>Als Nächstes</h2></div>${stopCard(next)}</section>` : '';
@@ -52,6 +54,7 @@ export function viewToday() {
     });
     body += storiesRow();
     body += weatherRow();
+    if (n <= 10) body += offlineHint();
     body += swipeTeaser();
     body += favorites();
     body += newsBlock();
@@ -175,6 +178,24 @@ function ideasResults(list, q) {
   return `${q ? `<p class="hint">${list.length} ${list.length === 1 ? 'Treffer' : 'Treffer'} in allen Orten, auch geplanten.</p>` : ''}<div class="ideas">${list.slice(0, ui.limit).map(ideaCard).join('')}</div>${list.length > ui.limit ? `<button class="btn wide" data-act="moreIdeas">${list.length - ui.limit} weitere zeigen</button>` : ''}`;
 }
 
+// ---------- Für unterwegs (offline) ----------
+const fmtWhen = (ts) => new Date(ts).toLocaleString('de-DE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+function offlineBlock() {
+  if (!offlineSupported()) return '';
+  const info = offlineInfo();
+  return `<section class="block" id="offline"><div class="block-h"><h2>Für unterwegs</h2></div>
+    <p class="hint">In der U-Bahn gibt es meist kein Netz. Speichere vorher im WLAN die Karte eures Gebiets und alle Fotos auf diesem Handy, zusammen etwa 60 MB. Plan, Ideen, Notizen und U-Bahn-Zeiten sind dann auch ohne Netz da.</p>
+    ${info ? `<p class="hint ok-line">${ICON.check} Gespeichert ${fmtWhen(info.at)}: Karte eures Gebiets und ${info.photos} Fotos.${info.failed ? ` ${info.failed} Teile fehlten, einfach nochmal speichern.` : ''}</p>` : ''}
+    <div class="off-prog" hidden><div class="meter"><i></i></div><small></small></div>
+    <button class="btn ${info ? '' : 'primary'}" data-act="offlineSave">${ICON.down}${info ? 'Auffrischen' : 'Jetzt speichern'}</button></section>`;
+}
+// Kurz vor und während der Reise auf "Heute", solange noch nichts gespeichert ist
+function offlineHint() {
+  if (!offlineSupported() || offlineInfo()) return '';
+  return `<section class="block offline-hint"><div class="trip-row">${ICON.down}<span><b>Für unterwegs speichern</b><small>Karte und Fotos aufs Handy laden, damit in der U-Bahn alles da ist. Am besten im WLAN.</small></span></div>
+    <button class="btn primary" data-act="offlineSave">Jetzt speichern</button></section>`;
+}
+
 // ---------- Google-Daten (Fotos, Öffnungszeiten, Bewertung, Suche) ----------
 const GC = 'https://console.cloud.google.com';
 function googleBlock() {
@@ -265,6 +286,7 @@ export function viewInfos() {
         ${isAdmin ? `<button class="btn sm" data-act="setHotel">${t.hotel ? 'Ändern' : 'Festlegen'}</button>` : ''}</div>
     </section>
 
+    ${offlineBlock()}
     ${isAdmin ? googleBlock() : ''}
 
     <section class="block"><div class="block-h"><h2>Die Bande</h2></div>
@@ -403,6 +425,20 @@ register({
       const r = results[Number(b.dataset.i)];
       try { await mutate('/trip', { method: 'PATCH', body: { hotel: { name: r.title, lat: r.lat, lng: r.lng } } }); closeSheet(); toast('Unterkunft gespeichert'); } catch (err) { toast(err.message); }
     });
+  },
+  offlineSave: async (el) => {
+    const box = el.closest('section');
+    const prog = box.querySelector('.off-prog') || (() => { const d = document.createElement('div'); d.className = 'off-prog'; d.innerHTML = '<div class="meter"><i></i></div><small></small>'; el.before(d); return d; })();
+    prog.hidden = false; el.disabled = true;
+    const bar = prog.querySelector('i'), txt = prog.querySelector('small');
+    try {
+      const info = await saveOffline(({ done, total, phase }) => {
+        bar.style.width = `${Math.round((done / total) * 100)}%`;
+        txt.textContent = `${phase === 'map' ? 'Karte' : 'Fotos'}: ${done} von ${total}`;
+      });
+      toast(info.failed ? `Gespeichert, ${info.failed} Teile fehlten. Später nochmal versuchen.` : 'Alles gespeichert. Gute Fahrt!', 4000);
+      window.dispatchEvent(new Event('rb:render'));
+    } catch (err) { toast(err.message || 'Speichern hat nicht geklappt.', 4000); el.disabled = false; prog.hidden = true; }
   },
   googleOff: async () => { if (!confirm('Google-Schlüssel entfernen? Fotos und Öffnungszeiten verschwinden dann.')) return; try { await mutate('/trip', { method: 'PATCH', body: { gkey: '' } }); } catch (err) { toast(err.message); } },
   delItem: async (el) => { if (!confirm('Eintrag entfernen?')) return; try { await mutate(`/items/${el.dataset.id}`, { method: 'DELETE' }); } catch (err) { toast(err.message); } },

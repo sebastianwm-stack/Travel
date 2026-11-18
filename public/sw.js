@@ -1,14 +1,15 @@
 // Offline-Unterstützung: erst frisch aus dem Netz, im Funkloch aus dem Cache.
-// /api/ wird nie zwischengespeichert (den letzten Reisestand hält die App selbst im localStorage).
-const CACHE = 'reisebande-v9';
-const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/js/illus.js', '/js/search.js', '/js/tour.js', '/js/transit/index.js', '/js/transit/router.js', '/js/transit/nyc.js', '/js/frame.js', '/js/drag.js', '/js/weather.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
+// /api/ wird nicht zwischengespeichert (den letzten Reisestand hält die App selbst im localStorage),
+// außer den Fotos der Orte. Kartenkacheln und Fotos lädt "Für unterwegs speichern" (offline.js) vorab.
+const CACHE = 'reisebande-v10';
+const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/api.js', '/js/state.js', '/js/ui.js', '/js/components.js', '/js/views.js', '/js/sheets.js', '/js/map.js', '/js/themes.js', '/js/push.js', '/js/plan.js', '/js/story.js', '/js/swipe.js', '/js/images.js', '/js/illus.js', '/js/search.js', '/js/tour.js', '/js/transit/index.js', '/js/transit/router.js', '/js/transit/nyc.js', '/js/frame.js', '/js/drag.js', '/js/offline.js', '/js/weather.js', '/fonts/bricolage.woff2', '/js/mapstyle.js', '/vendor/maplibre/maplibre-gl-csp.js', '/vendor/maplibre/maplibre-gl-csp-worker.js', '/vendor/maplibre/maplibre-gl.css'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
 });
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
-  for (const k of await caches.keys()) if (k !== CACHE && !k.startsWith('tiles')) await caches.delete(k);
+  for (const k of await caches.keys()) if (k !== CACHE && !k.startsWith('tiles') && !k.startsWith('photos')) await caches.delete(k);
   await self.clients.claim();
 })()));
 
@@ -16,7 +17,26 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET') return;
-  // Kartenkacheln: aus dem Cache, wenn vorhanden (offline unterwegs)
+  // Kartenbeschreibung (zeigt auf die aktuelle Kachel-Version): frisch, im Funkloch die gespeicherte
+  if (url.hostname === 'tiles.openfreemap.org' && url.pathname === '/planet') {
+    e.respondWith((async () => {
+      const cache = await caches.open('tiles-v1');
+      try { const res = await fetch(req); if (res.ok) cache.put(req, res.clone()); return res; }
+      catch { return (await cache.match(req)) || Response.error(); }
+    })());
+    return;
+  }
+  // Fotos der Orte (Google über unseren Server, Wikipedia): einmal laden, dann aus dem Speicher
+  if (url.pathname.startsWith('/api/gphoto/') || url.hostname === 'upload.wikimedia.org') {
+    e.respondWith((async () => {
+      const cache = await caches.open('photos-v1');
+      const hit = await cache.match(req, { ignoreVary: true });
+      if (hit) return hit;
+      try { const res = await fetch(req); if (res.ok || res.type === 'opaque') cache.put(req, res.clone()); return res; } catch { return Response.error(); }
+    })());
+    return;
+  }
+  // Kartenkacheln und Schriften: aus dem Cache, wenn vorhanden (offline unterwegs)
   if (url.hostname === 'tiles.openfreemap.org') {
     e.respondWith((async () => {
       const cache = await caches.open('tiles-v1');

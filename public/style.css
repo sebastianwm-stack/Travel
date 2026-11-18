@@ -603,3 +603,13 @@ img.ph { display: block; object-fit: cover; background: var(--soft); }
 .slot.drop-on { outline: 2.5px dashed var(--cobalt); outline-offset: 2px; }
 .chips.days .chip.drop-on { outline: 2.5px dashed var(--cobalt); outline-offset: 2px; transform: scale(1.06); }
 .drop-line { height: 4px; border-radius: 2px; background: var(--cobalt); margin: -2px 0; }
+
+/* Für unterwegs */
+.off-prog { display: grid; gap: 6px; }
+.off-prog .meter { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; border: 1.5px solid var(--line); }
+.off-prog .meter i { display: block; height: 100%; width: 0; background: var(--cobalt); transition: width .2s; }
+.off-prog small { color: var(--mute); font-weight: 650; font-size: 12.5px; }
+.ok-line { color: var(--ink); font-weight: 650; }
+.ok-line svg { width: 16px; height: 16px; vertical-align: -3px; color: #1E8A4C; }
+.offline-hint { display: grid; gap: 10px; }
+.offline-hint .trip-row { background: #DCE6FF; }

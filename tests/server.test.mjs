@@ -432,3 +432,15 @@ test('Kurzinfos: einmal je Ort, Hausregeln im Text, ohne neue Orte kein KI-Aufru
   assert.equal(calls, before);
   assert.equal(cleanBlurb('a'.repeat(300)).length <= 232, true);
 });
+
+test('Für unterwegs: Kacheln decken das Gebiet aller Orte ab, Fotos aus Google und Wikipedia', async () => {
+  globalThis.window ||= {};
+  const { tileList, photoList } = await import('../public/js/offline.js');
+  const pts = [{ lat: 40.7114, lng: -74.0102 }, { lat: 40.7587, lng: -73.9787 }, { lat: 40.6168, lng: -74.0183 }];
+  const urls = tileList(pts, 'https://t/{z}/{x}/{y}.pbf', 14);
+  assert.ok(urls.length > 50 && urls.length < 200, `${urls.length} Kacheln`);
+  assert.ok(urls.includes('https://t/14/4823/6160.pbf'), 'Kachel am Hotel dabei');
+  assert.equal(new Set(urls).size, urls.length);
+  const ph = photoList([{ id: 'a', g: { photo: true, v: 'x' } }, { id: 'b', image: 'https://upload.wikimedia.org/x.jpg' }, { id: 'c' }]);
+  assert.deepEqual(ph.map((p) => p.url), ['/api/gphoto/a?v=x', 'https://upload.wikimedia.org/x.jpg']);
+});
